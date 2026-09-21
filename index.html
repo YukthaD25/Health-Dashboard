@@ -35,12 +35,15 @@
   }
   .brand h1{margin:0;font-size:19px;letter-spacing:.2px;}
   .brand p{margin:2px 0 0;font-size:12px;color:var(--muted);}
+  .right{display:flex;flex-direction:column;gap:6px;align-items:flex-end;}
   .status{display:flex;align-items:center;gap:10px;font-size:13px;color:var(--muted);}
   .dot{width:10px;height:10px;border-radius:50%;background:#64748b;}
   .dot.good{background:var(--good);animation:ping 1.8s infinite;}
   .dot.warn{background:var(--warn);}
   .dot.bad{background:var(--bad);animation:ping 1.2s infinite;}
   @keyframes ping{0%{box-shadow:0 0 0 0 currentColor}70%{box-shadow:0 0 0 9px transparent}100%{box-shadow:0 0 0 0 transparent}}
+  .cloud{font-size:11.5px;color:var(--muted);}
+  .cloud b{color:#9fd0ff;}
 
   /* ---------- Alert banner ---------- */
   .banner{
@@ -142,10 +145,13 @@
         <p>Live patient telemetry</p>
       </div>
     </div>
-    <div class="status">
-      <span id="connDot" class="dot warn"></span>
-      <span id="connText">Connecting…</span>
-      <span class="muted" id="lastUpdate"></span>
+    <div class="right">
+      <div class="status">
+        <span id="connDot" class="dot warn"></span>
+        <span id="connText">Connecting…</span>
+        <span class="muted" id="lastUpdate"></span>
+      </div>
+      <div class="cloud" id="cloudStatus">Cloud log: <b>idle</b></div>
     </div>
   </header>
 
@@ -260,6 +266,15 @@ const db   = getDatabase(app);
 const auth = getAuth(app);
 
 /* =========================================================
+   GOOGLE SHEETS WEBHOOK CONFIG
+   ========================================================= */
+const SHEETS_WEBHOOK_URL = 'https://script.google.com/macros/s/AKfycbwFU28P7PBVULhsxcOEW2RWY5c9T1luMWo2t8ejigJul07908S22WsiXNCEYGybrcvF/exec';
+const SHEETS_SECRET      = 'iotProject@123';   // must match Apps Script SECRET
+const SAVE_INTERVAL_MS   = 30_000;             // periodic save every 30 s
+const SAVE_ON_ALERTS     = true;               // save immediately on fall / SOS / critical vitals
+const ALERT_DEBOUNCE_MS  = 5_000;              // minimum gap between alert-driven saves
+
+/* =========================================================
    2. DOM HELPERS
    ========================================================= */
 const $ = (id) => document.getElementById(id);
@@ -331,7 +346,10 @@ const accelChart = new Chart($('accelChart'), {
 const state = {
   prevFall: null, prevTouch: null,
   prevHrZone: null, prevSpo2Zone: null,
-  prevImpact: false, packets: 0
+  prevImpact: false, packets: 0,
+  latest: null,               // most-recent payload, used by the sheet saver
+  lastSavedAt: 0,             // throttle timestamp
+  savedCount: 0               // how many rows sent this session
 };
 
 const num  = (v) => { const f = parseFloat(v); return Number.isFinite(f) ? f : null; };
@@ -348,6 +366,10 @@ function setConn(level, text){
   const dot = $('connDot');
   dot.className = 'dot ' + (level === 'ok' ? 'good' : level);
   $('connText').textContent = text;
+}
+
+function setCloud(text, ok){
+  $('cloudStatus').innerHTML = `Cloud log: <b style="color:${ok ? '#4ade80' : '#ffb020'}">${text}</b>`;
 }
 
 function pushPoint(hr, spo2, ax, ay, az){
@@ -368,6 +390,57 @@ function setCard(cardId, valId, tagId, value, status, level){
   if (level) card.classList.add(level);
   $(valId).textContent = value;
   $(tagId).textContent = status;
+}
+
+/* =========================================================
+   GOOGLE SHEETS SAVER
+   ========================================================= */
+async function saveToSheets(payload, reason = 'periodic'){
+  if (!SHEETS_WEBHOOK_URL || SHEETS_WEBHOOK_URL.includes('PASTE_YOUR')) return;
+
+  setCloud('saving…', false);
+
+  try {
+    const res = await fetch(SHEETS_WEBHOOK_URL, {
+      method: 'POST',
+      // text/plain avoids a CORS preflight with Apps Script
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify({ secret: SHEETS_SECRET, reason, ...payload })
+    });
+
+    const data = await res.json().catch(() => ({}));
+
+    if (data && data.ok){
+      state.lastSavedAt = Date.now();
+      state.savedCount++;
+      setCloud(`✓ ${state.savedCount} rows saved (last: ${reason})`, true);
+      addLog('good', `☁️ Saved to Google Sheets (${reason}) → row ${data.row}.`);
+    } else {
+      const msg = (data && data.error) ? data.error : 'unknown error';
+      setCloud('save rejected: ' + msg, false);
+      addLog('bad', `Cloud save rejected: ${msg}`);
+    }
+  } catch (e){
+    setCloud('save failed', false);
+    addLog('bad', `Cloud save failed: ${e.message}`);
+  }
+}
+
+function buildSheetRow({ hr, spo2, ax, ay, az, mag, tilt, fall, touch, score, statusText }){
+  return {
+    timestamp: new Date().toISOString(),
+    heartRate: hr,
+    spO2: spo2,
+    accel_x: ax,
+    accel_y: ay,
+    accel_z: az,
+    magnitude: mag !== null ? +mag.toFixed(3) : null,
+    tilt: tilt !== null ? +tilt.toFixed(2) : null,
+    fallAlert: !!fall,
+    touchTrigger: !!touch,
+    score,
+    status: statusText || ''
+  };
 }
 
 /* =========================================================
@@ -644,6 +717,22 @@ function handlePayload(raw){
 
   const ts = d.timestamp ? new Date(d.timestamp) : new Date();
   $('lastUpdate').textContent = 'Updated ' + (isNaN(ts) ? timeStr() : timeStr(ts));
+
+  /* =========================================================
+     STORE LATEST + SAVE TO GOOGLE SHEETS
+     ========================================================= */
+  state.latest = { hr, spo2, ax, ay, az, mag, tilt, fall, touch,
+                   score: result.score, statusText: result.hrZone + '/' + result.spo2Zone };
+
+  // Save immediately on critical events
+  if (SAVE_ON_ALERTS){
+    const critical = fall || touch
+      || (spo2 !== null && spo2 < 90)
+      || (hr !== null && (hr < 45 || hr > 130));
+    if (critical && Date.now() - state.lastSavedAt > ALERT_DEBOUNCE_MS){
+      saveToSheets(buildSheetRow(state.latest), 'alert');
+    }
+  }
 }
 
 /* =========================================================
@@ -685,6 +774,7 @@ function attach(path){
 
 async function connect(){
   setConn('warn', 'Connecting…');
+  setCloud('idle', false);
 
   try {
     await signInWithEmailAndPassword(auth, AUTH_EMAIL, AUTH_PASS);
@@ -692,7 +782,6 @@ async function connect(){
     console.warn('Auth failed:', e.code);
   }
 
-  // Give the auth token a moment to propagate before the first read.
   await new Promise(r => setTimeout(r, 400));
 
   const candidates = [
@@ -717,6 +806,15 @@ async function connect(){
 }
 
 connect();
+
+/* =========================================================
+   PERIODIC SAVE TIMER
+   ========================================================= */
+setInterval(() => {
+  if (state.latest && Date.now() - state.lastSavedAt >= SAVE_INTERVAL_MS){
+    saveToSheets(buildSheetRow(state.latest), 'periodic');
+  }
+}, 5_000);
 </script>
 </body>
 </html>
