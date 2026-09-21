@@ -7,16 +7,9 @@
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
 <style>
   :root{
-    --bg:#070b16;
-    --panel:#101a2f;
-    --panel2:#16223c;
-    --border:#233251;
-    --text:#e9eefb;
-    --muted:#8ba0c6;
-    --accent:#4f8cff;
-    --good:#25d07a;
-    --warn:#ffb020;
-    --bad:#ff4d5e;
+    --bg:#070b16; --panel:#101a2f; --panel2:#16223c; --border:#233251;
+    --text:#e9eefb; --muted:#8ba0c6; --accent:#4f8cff;
+    --good:#25d07a; --warn:#ffb020; --bad:#ff4d5e;
   }
   *{box-sizing:border-box;}
   body{
@@ -42,12 +35,21 @@
   }
   .brand h1{margin:0;font-size:19px;letter-spacing:.2px;}
   .brand p{margin:2px 0 0;font-size:12px;color:var(--muted);}
+  .right{display:flex;flex-direction:column;gap:10px;align-items:flex-end;}
   .status{display:flex;align-items:center;gap:10px;font-size:13px;color:var(--muted);}
-  .dot{width:10px;height:10px;border-radius:50%;background:#64748b;box-shadow:0 0 0 0 #64748b66;}
+  .dot{width:10px;height:10px;border-radius:50%;background:#64748b;}
   .dot.good{background:var(--good);animation:ping 1.8s infinite;}
   .dot.warn{background:var(--warn);}
   .dot.bad{background:var(--bad);animation:ping 1.2s infinite;}
   @keyframes ping{0%{box-shadow:0 0 0 0 currentColor}70%{box-shadow:0 0 0 9px transparent}100%{box-shadow:0 0 0 0 transparent}}
+
+  .pathbar{display:flex;gap:8px;align-items:center;}
+  .pathinput{
+    background:#0c1425;border:1px solid var(--border);border-radius:9px;color:var(--text);
+    padding:7px 11px;font-size:12.5px;min-width:230px;outline:none;
+    font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
+  }
+  .pathinput:focus{border-color:var(--accent);}
 
   /* ---------- Alert banner ---------- */
   .banner{
@@ -63,8 +65,7 @@
   .card{
     position:relative;overflow:hidden;padding:15px 17px;border-radius:16px;
     background:linear-gradient(160deg,var(--panel),var(--panel2));
-    border:1px solid var(--border);
-    transition:border-color .25s, transform .25s;
+    border:1px solid var(--border);transition:border-color .25s, transform .25s;
   }
   .card:hover{transform:translateY(-2px);}
   .card::after{content:"";position:absolute;left:0;top:0;height:3px;width:100%;background:var(--accent);opacity:.85;}
@@ -128,6 +129,7 @@
   .log-item.warn{border-left-color:var(--warn);}
   .log-item.bad {border-left-color:var(--bad);}
   .log-item .t{color:var(--muted);font-variant-numeric:tabular-nums;flex:none;}
+  .log-item code{font-family:ui-monospace,Menlo,monospace;color:#9fd0ff;}
   .btn{
     background:#1b2743;color:#c7d5f2;border:1px solid var(--border);border-radius:9px;
     padding:6px 13px;font-size:12px;cursor:pointer;font-weight:600;
@@ -150,10 +152,17 @@
         <p>Firebase Realtime Database · Live Telemetry</p>
       </div>
     </div>
-    <div class="status">
-      <span id="connDot" class="dot"></span>
-      <span id="connText">Connecting…</span>
-      <span class="muted" id="lastUpdate"></span>
+    <div class="right">
+      <div class="status">
+        <span id="connDot" class="dot"></span>
+        <span id="connText">Connecting…</span>
+        <span class="muted" id="lastUpdate"></span>
+      </div>
+      <div class="pathbar">
+        <input id="pathInput" class="pathinput" placeholder="auto-detect…  e.g. /sensor_data" />
+        <button id="pathBtn" class="btn">Connect</button>
+        <button id="reprobeBtn" class="btn">Auto‑detect</button>
+      </div>
     </div>
   </header>
 
@@ -243,8 +252,12 @@
    1. FIREBASE SETUP
    ========================================================= */
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
-import { getDatabase, ref, onValue } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
-import { getAuth, signInWithEmailAndPassword } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+import {
+  getDatabase, ref, onValue, get
+} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
+import {
+  getAuth, signInWithEmailAndPassword, onAuthStateChanged
+} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 
 const firebaseConfig = {
   apiKey: "AIzaSyDjR52Qayic9GCwVHdsINg3jO6TnQetFZ8",
@@ -285,10 +298,10 @@ const vitalsChart = new Chart($('vitalsChart'), {
     datasets: [
       { label:'Heart Rate (bpm)', data: hrData, yAxisID:'y', borderColor:'#ff4d6d',
         backgroundColor:'rgba(255,77,109,.13)', tension:.35, borderWidth:2,
-        pointRadius:0, pointHoverRadius:4, fill:true },
+        pointRadius:0, pointHoverRadius:4, fill:true, spanGaps:true },
       { label:'SpO₂ (%)', data: spo2Data, yAxisID:'y1', borderColor:'#4fd1ff',
         backgroundColor:'rgba(79,209,255,.10)', tension:.35, borderWidth:2,
-        pointRadius:0, pointHoverRadius:4, fill:true }
+        pointRadius:0, pointHoverRadius:4, fill:true, spanGaps:true }
     ]
   },
   options: {
@@ -335,8 +348,7 @@ const accelChart = new Chart($('accelChart'), {
 const state = {
   prevFall: null, prevTouch: null,
   prevHrZone: null, prevSpo2Zone: null,
-  prevImpact: false,
-  packets: 0
+  prevImpact: false, packets: 0
 };
 
 const num  = (v) => { const f = parseFloat(v); return Number.isFinite(f) ? f : null; };
@@ -347,8 +359,7 @@ const bool = (v) => {
   return false;
 };
 const clamp = (v,a,b) => Math.min(b, Math.max(a,v));
-const timeStr = (d=new Date()) =>
-  d.toLocaleTimeString('en-GB', { hour12:false });
+const timeStr = (d=new Date()) => d.toLocaleTimeString('en-GB', { hour12:false });
 
 function setConn(level, text){
   const dot = $('connDot');
@@ -356,15 +367,10 @@ function setConn(level, text){
   $('connText').textContent = text;
 }
 
-/* ---- push a point into all rolling buffers ---- */
 function pushPoint(hr, spo2, ax, ay, az){
   labels.push(timeStr());
-  hrData.push(hr);
-  spo2Data.push(spo2);
-  axData.push(ax);
-  ayData.push(ay);
-  azData.push(az);
-
+  hrData.push(hr); spo2Data.push(spo2);
+  axData.push(ax); ayData.push(ay); azData.push(az);
   while (labels.length > MAX_POINTS){
     labels.shift(); hrData.shift(); spo2Data.shift();
     axData.shift(); ayData.shift(); azData.shift();
@@ -373,7 +379,6 @@ function pushPoint(hr, spo2, ax, ay, az){
   accelChart.update('none');
 }
 
-/* ---- card setter ---- */
 function setCard(cardId, valId, tagId, value, status, level){
   const card = $(cardId);
   card.classList.remove('good','warn','bad');
@@ -388,7 +393,7 @@ function setCard(cardId, valId, tagId, value, status, level){
 const logs = [];
 function addLog(level, message){
   logs.unshift({ level, message, time: timeStr() });
-  if (logs.length > 40) logs.pop();
+  if (logs.length > 60) logs.pop();
   renderLog();
 }
 function renderLog(){
@@ -416,27 +421,23 @@ function analyze({ hr, spo2, mag, tilt, fall, touch }){
     insights.push({ level:'warn', icon:'❔', title:'Heart Rate — no data',
                     text:'No heart-rate value received in the latest packet.' });
   } else if (hr < 50){
-    hrZone = 'critical';
-    score -= 28;
+    hrZone='critical'; score -= 28;
     insights.push({ level:'bad', icon:'🔻', title:'Severe Bradycardia',
                     text:`Heart rate is ${hr} bpm — well below the normal 60–100 bpm range. Seek attention.` });
   } else if (hr < 60){
-    hrZone = 'low';
-    score -= 12;
+    hrZone='low'; score -= 12;
     insights.push({ level:'warn', icon:'🔽', title:'Bradycardia',
                     text:`Heart rate is ${hr} bpm — slightly below the normal 60–100 bpm range.` });
   } else if (hr > 120){
-    hrZone = 'critical';
-    score -= 28;
+    hrZone='critical'; score -= 28;
     insights.push({ level:'bad', icon:'🔺', title:'Severe Tachycardia',
                     text:`Heart rate is ${hr} bpm — far above the normal range. Immediate attention advised.` });
   } else if (hr > 100){
-    hrZone = 'high';
-    score -= 12;
+    hrZone='high'; score -= 12;
     insights.push({ level:'warn', icon:'🔼', title:'Tachycardia',
                     text:`Heart rate is ${hr} bpm — slightly above the normal 60–100 bpm range.` });
   } else {
-    hrZone = 'normal';
+    hrZone='normal';
     insights.push({ level:'good', icon:'✅', title:'Heart Rate Normal',
                     text:`${hr} bpm is within the healthy 60–100 bpm range.` });
   }
@@ -447,22 +448,20 @@ function analyze({ hr, spo2, mag, tilt, fall, touch }){
     insights.push({ level:'warn', icon:'❔', title:'SpO₂ — no data',
                     text:'No blood-oxygen value received in the latest packet.' });
   } else if (spo2 < 90){
-    spo2Zone = 'critical';
-    score -= 35;
+    spo2Zone='critical'; score -= 35;
     insights.push({ level:'bad', icon:'🫁', title:'Critical Hypoxemia',
                     text:`SpO₂ is ${spo2}% — below 90% is a medical emergency. Administer oxygen / call for help.` });
   } else if (spo2 < 95){
-    spo2Zone = 'low';
-    score -= 15;
+    spo2Zone='low'; score -= 15;
     insights.push({ level:'warn', icon:'⚠️', title:'Low Oxygen Saturation',
                     text:`SpO₂ is ${spo2}% — below the normal 95–100% range. Monitor closely.` });
   } else {
-    spo2Zone = 'normal';
+    spo2Zone='normal';
     insights.push({ level:'good', icon:'✅', title:'Oxygen Saturation Normal',
                     text:`SpO₂ is ${spo2}% — well within the healthy 95–100% range.` });
   }
 
-  /* ---- Motion / accelerometer ---- */
+  /* ---- Motion ---- */
   if (mag !== null){
     const dev = Math.abs(mag - 9.81);
     if (mag > 25){
@@ -499,7 +498,7 @@ function analyze({ hr, spo2, mag, tilt, fall, touch }){
                     text:'The fall-detection flag is currently clear.' });
   }
 
-  /* ---- Touch / SOS ---- */
+  /* ---- Touch ---- */
   if (touch){
     score -= 8;
     insights.push({ level:'warn', icon:'🖐️', title:'Touch / SOS Triggered',
@@ -511,7 +510,6 @@ function analyze({ hr, spo2, mag, tilt, fall, touch }){
 }
 
 function renderAnalysis({ insights, score }, summary){
-  /* score ring */
   const ring = $('scoreRing');
   const color = score >= 85 ? '#25d07a' : score >= 60 ? '#ffb020' : '#ff4d5e';
   const deg = (score / 100) * 360;
@@ -528,15 +526,33 @@ function renderAnalysis({ insights, score }, summary){
 }
 
 /* =========================================================
-   7. MAIN DATA HANDLER
+   7. PAYLOAD NORMALISATION
    ========================================================= */
+const SENSOR_KEY_RE = /^(heart_?rate|hr|sp_?o2|oxygen|accel_?[xyz]|fall_?alert|touch_?trigger)$/i;
+
+/** Recursively locate the first object that looks like a sensor packet. */
+function findSensorObject(obj, depth = 0){
+  if (!obj || typeof obj !== 'object' || depth > 5) return null;
+  const keys = Object.keys(obj);
+  if (keys.some(k => SENSOR_KEY_RE.test(k))) return obj;
+  for (const k of keys){
+    const found = findSensorObject(obj[k], depth + 1);
+    if (found) return found;
+  }
+  return null;
+}
+
 function handlePayload(raw){
   if (!raw || typeof raw !== 'object') return;
 
-  /* Support both  /  →  {sensor_data:{...}}  and  /sensor_data → {...} */
+  /* unwrap common wrappers, then deep-search as a last resort */
   let d = raw;
   if (d.sensor_data && typeof d.sensor_data === 'object') d = d.sensor_data;
-  if (d.sensor_data && typeof d.sensor_data === 'object') d = d.sensor_data; // extra nesting
+  if (d.data && typeof d.data === 'object' && Object.keys(d).length <= 2) d = d.data;
+  if (!Object.keys(d).some(k => SENSOR_KEY_RE.test(k))){
+    const found = findSensorObject(raw);
+    if (found) d = found;
+  }
 
   const hr    = num(d.heartRate ?? d.heart_rate ?? d.hr);
   const spo2  = num(d.spO2 ?? d.spo2 ?? d.SpO2 ?? d.oxygen);
@@ -546,30 +562,26 @@ function handlePayload(raw){
   const fall  = bool(d.fallAlert ?? d.fall_alert ?? d.fall);
   const touch = bool(d.touchTrigger ?? d.touch_trigger ?? d.touch);
 
-  /* --- derived physics --- */
   const mag  = Math.sqrt(ax*ax + ay*ay + az*az);
   const tilt = mag > 0 ? (Math.acos(clamp(az / mag, -1, 1)) * 180 / Math.PI) : 0;
 
   state.packets++;
 
   /* --- cards --- */
-  // Heart rate
-  let hrLevel = '', hrText = '';
-  if (hr === null){ hrLevel=''; hrText='no data'; }
+  let hrLevel='', hrText='';
+  if (hr === null){ hrText='no data'; }
   else if (hr < 60){ hrLevel='warn'; hrText='Bradycardia'; }
   else if (hr > 100){ hrLevel='bad'; hrText='Tachycardia'; }
   else { hrLevel='good'; hrText='Normal'; }
   setCard('cardHr','hrVal','hrTag', hr === null ? '--' : Math.round(hr), hrText, hrLevel);
 
-  // SpO2
-  let spLevel = '', spText = '';
-  if (spo2 === null){ spLevel=''; spText='no data'; }
+  let spLevel='', spText='';
+  if (spo2 === null){ spText='no data'; }
   else if (spo2 < 90){ spLevel='bad'; spText='Critical'; }
   else if (spo2 < 95){ spLevel='warn'; spText='Low'; }
   else { spLevel='good'; spText='Normal'; }
   setCard('cardSpo2','spo2Val','spo2Tag', spo2 === null ? '--' : Math.round(spo2), spText, spLevel);
 
-  // Magnitude
   const magDev = Math.abs(mag - 9.81);
   let magLevel, magText;
   if (mag > 25){ magLevel='bad';  magText='Impact!'; }
@@ -577,36 +589,31 @@ function handlePayload(raw){
   else { magLevel='good'; magText='At rest'; }
   setCard('cardMag','magVal','magTag', mag.toFixed(2), magText, magLevel);
 
-  // Tilt
   const tiltLevel = tilt > 60 ? 'warn' : 'good';
   setCard('cardTilt','tiltVal','tiltTag', tilt.toFixed(1),
           tilt > 60 ? 'Tilted' : 'Upright', tiltLevel);
 
-  // Fall
   $('fallVal').textContent = fall ? 'FALL' : 'SAFE';
   $('fallVal').style.color = fall ? 'var(--bad)' : 'var(--good)';
   setCard('cardFall','fallVal','fallTag', fall ? 'FALL' : 'SAFE',
           fall ? 'Alert active' : 'No fall', fall ? 'bad' : 'good');
 
-  // Touch
   setCard('cardTouch','touchVal','touchTag',
           touch ? 'PRESSED' : 'IDLE',
           touch ? 'SOS triggered' : 'Not triggered',
           touch ? 'warn' : 'good');
 
   /* --- charts --- */
-  pushPoint(hr ?? null, spo2 ?? null, ax, ay, az);
+  pushPoint(hr, spo2, ax, ay, az);
 
   /* --- analysis --- */
   const result = analyze({ hr, spo2, mag, tilt, fall, touch });
-
-  const summaryBits = [];
-  summaryBits.push(`<b>${state.packets}</b> packets received.`);
-  if (hr !== null)   summaryBits.push(`Latest HR <b>${Math.round(hr)} bpm</b>.`);
-  if (spo2 !== null) summaryBits.push(`Latest SpO₂ <b>${Math.round(spo2)}%</b>.`);
-  summaryBits.push(fall ? '<b style="color:#ff7b8a">Fall alert is ACTIVE.</b>'
-                        : 'No fall detected.');
-  renderAnalysis(result, summaryBits.join(' '));
+  const bits = [];
+  bits.push(`<b>${state.packets}</b> packets received.`);
+  if (hr !== null)   bits.push(`Latest HR <b>${Math.round(hr)} bpm</b>.`);
+  if (spo2 !== null) bits.push(`Latest SpO₂ <b>${Math.round(spo2)}%</b>.`);
+  bits.push(fall ? '<b style="color:#ff7b8a">Fall alert is ACTIVE.</b>' : 'No fall detected.');
+  renderAnalysis(result, bits.join(' '));
 
   /* --- banner --- */
   const banner = $('banner');
@@ -656,50 +663,178 @@ function handlePayload(raw){
     }
   }
 
-  /* --- impact spike (independent of the fall flag) --- */
   const impact = mag > 25;
-  if (impact && !state.prevImpact){
-    addLog('bad', `💥 Impact spike detected — ${mag.toFixed(2)} m/s².`);
-  }
+  if (impact && !state.prevImpact) addLog('bad', `💥 Impact spike detected — ${mag.toFixed(2)} m/s².`);
   state.prevImpact = impact;
 
-  /* --- timestamp --- */
   const ts = d.timestamp ? new Date(d.timestamp) : new Date();
   $('lastUpdate').textContent = 'Updated ' + (isNaN(ts) ? timeStr() : timeStr(ts));
 }
 
 /* =========================================================
-   8. AUTH + REALTIME LISTENER
+   8. PATH PROBING + LIVE LISTENER
    ========================================================= */
-setConn('warn', 'Authenticating…');
+let activePath   = null;
+let activeUnsub  = null;
+let authUid      = null;
 
-signInWithEmailAndPassword(auth, AUTH_EMAIL, AUTH_PASS)
-  .then(() => { setConn('warn', 'Authenticated · connecting to database…'); })
-  .catch((err) => {
-    console.warn('Auth failed:', err.code, err.message);
-    setConn('warn', 'Auth failed (' + (err.code || 'error') + ') — trying public read…');
-  })
-  .finally(() => {
+const normPath = (p) => '/' + String(p || '').trim().replace(/^\/+|\/+$/g, '');
 
-    onValue(
-      ref(db, '/'),
-      (snapshot) => {
-        const val = snapshot.val();
-        if (val === null){
-          setConn('warn', 'Connected — no data at root yet');
-          return;
-        }
-        setConn('ok', 'Live · receiving data');
-        handlePayload(val);
-      },
-      (error) => {
-        console.error(error);
-        setConn('bad', 'DB error: ' + error.code);
-        addLog('bad', 'Database read failed: ' + error.message);
-      }
+function candidatePaths(){
+  const list = [
+    '/sensor_data', '/SensorData', '/sensorData',
+    '/health', '/healthData', '/data', '/live', '/readings', '/sensor', '/telemetry'
+  ];
+  if (authUid){
+    list.push(
+      `/users/${authUid}`, `/users/${authUid}/sensor_data`,
+      `/users/${authUid}/health`, `/devices/${authUid}`,
+      `/${authUid}`, `/${authUid}/sensor_data`
     );
+  }
+  list.push('/');                       // root last — most likely to be denied
+  return [...new Set(list)];
+}
 
-  });
+/** Try to read a path once. Returns {path, ok, exists, error}. */
+async function probe(path){
+  try {
+    const snap = await get(ref(db, path));
+    return { path, ok:true, exists: snap.exists() };
+  } catch (e){
+    return { path, ok:false, error: e.code || e.message };
+  }
+}
+
+function detach(){
+  if (activeUnsub){ activeUnsub(); activeUnsub = null; }
+}
+
+function attach(path){
+  detach();
+  activePath = path;
+  $('pathInput').value = path;
+
+  const started = { done:false };
+
+  activeUnsub = onValue(
+    ref(db, path),
+    (snap) => {
+      const val = snap.val();
+      if (val === null || val === undefined){
+        if (!started.done){
+          started.done = true;
+          setConn('warn', `Connected to ${path} — no data yet`);
+          addLog('warn', `Path <code>${path}</code> exists but is currently empty.`);
+        }
+        return;
+      }
+      if (!started.done){
+        started.done = true;
+        setConn('ok', 'Live · ' + path);
+        addLog('good', `✅ Live listener attached to <code>${path}</code>.`);
+      }
+      handlePayload(val);
+    },
+    (err) => {
+      setConn('bad', 'DB error: ' + (err.code || 'unknown'));
+      addLog('bad', `Listener on <code>${path}</code> failed: ${err.code || err.message}`);
+    }
+  );
+}
+
+/** Probe all candidates and attach to the first readable one with data. */
+async function autoDetect(){
+  detach();
+  setConn('warn', 'Auto-detecting data path…');
+  addLog('warn', 'Probing candidate database paths…');
+
+  const paths = candidatePaths();
+  let firstReadableButEmpty = null;
+
+  for (const p of paths){
+    const r = await probe(p);
+
+    if (!r.ok){
+      // only log the interesting ones to keep the log readable
+      if (p === '/' || p === '/sensor_data'){
+        addLog('bad', `✗ <code>${p}</code> — ${r.error}`);
+      }
+      continue;
+    }
+
+    if (r.exists){
+      addLog('good', `✓ Found data at <code>${p}</code>.`);
+      attach(p);
+      return true;
+    }
+
+    if (!firstReadableButEmpty) firstReadableButEmpty = p;
+  }
+
+  if (firstReadableButEmpty){
+    addLog('warn', `Readable but empty: <code>${firstReadableButEmpty}</code>. Listening anyway.`);
+    attach(firstReadableButEmpty);
+    return true;
+  }
+
+  setConn('bad', 'No readable path — check DB rules');
+  addLog('bad',
+    'No readable path found. Open <b>Firebase Console → Realtime Database → Rules</b> and confirm ' +
+    'that the signed-in user may read the data. A typical test rule is ' +
+    '<code>{".read": "auth != null", ".write": "auth != null"}</code> or ' +
+    '<code>{"sensor_data": {".read": true}}</code>.'
+  );
+  return false;
+}
+
+/* ---- manual path buttons ---- */
+$('pathBtn').addEventListener('click', async () => {
+  const p = normPath($('pathInput').value);
+  if (!p || p === '/'){ autoDetect(); return; }
+  setConn('warn', `Testing ${p}…`);
+  const r = await probe(p);
+  if (!r.ok){
+    setConn('bad', 'Denied: ' + p);
+    addLog('bad', `<code>${p}</code> — ${r.error}`);
+    return;
+  }
+  addLog(r.exists ? 'good' : 'warn',
+         r.exists ? `✓ Manual path <code>${p}</code> has data.` : `<code>${p}</code> readable but empty.`);
+  attach(p);
+});
+
+$('reprobeBtn').addEventListener('click', () => autoDetect());
+
+/* =========================================================
+   9. BOOT: AUTH FIRST, THEN CONNECT
+   ========================================================= */
+onAuthStateChanged(auth, (user) => {
+  authUid = user ? user.uid : null;
+  if (user) addLog('good', `Signed in as <b>${user.email}</b> (uid ${user.uid.slice(0,8)}…).`);
+});
+
+(async function boot(){
+  setConn('warn', 'Authenticating…');
+
+  try {
+    const cred = await signInWithEmailAndPassword(auth, AUTH_EMAIL, AUTH_PASS);
+    authUid = cred.user.uid;
+    setConn('warn', 'Authenticated · locating data…');
+    addLog('good', `Authentication successful for <b>${cred.user.email}</b>.`);
+  } catch (err){
+    console.warn('Auth failed:', err.code, err.message);
+    setConn('warn', 'Auth failed (' + (err.code || 'error') + ') · trying anyway…');
+    addLog('bad',
+      `Sign-in failed: <b>${err.code || err.message}</b>. ` +
+      'Continuing with unauthenticated access — if the database requires auth, reads will be denied.'
+    );
+  }
+
+  // Wait for the auth token to propagate before the first read.
+  await new Promise(r => setTimeout(r, 400));
+  await autoDetect();
+})();
 </script>
 </body>
 </html>
