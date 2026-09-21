@@ -180,7 +180,7 @@
       <div class="tag" id="fallTag">waiting…</div>
     </div>
     <div class="card" id="cardTouch">
-      <div class="label">Touch / SOS Trigger</div>
+      <div class="label">Touch Trigger</div>
       <div class="value" id="touchVal">--</div>
       <div class="tag" id="touchTag">waiting…</div>
     </div>
@@ -255,11 +255,10 @@ const db   = getDatabase(app);
 const auth = getAuth(app);
 
 /* =========================================================
-   GOOGLE SHEETS CONFIG  (NEW)
+   GOOGLE SHEETS CONFIG
    ---------------------------------------------------------
    • Paste your Spreadsheet ID below.
-   • The sheet must be shared "Anyone with the link → Viewer"
-     so the browser can read it without Apps Script changes.
+   • The sheet must be shared "Anyone with the link → Viewer".
    ========================================================= */
 const SPREADSHEET_ID = '1wUl-47qPJtaNRCg58auFEuCtU_f5bYcBZVRS_Zj4YpY';
 const SHEET_TAB_NAME = 'Log';
@@ -281,7 +280,7 @@ const ALERT_DEBOUNCE_MS  = 5_000;
    2. DOM HELPERS
    ========================================================= */
 const $ = (id) => document.getElementById(id);
-const MAX_POINTS = 15;                     // chart keeps last 15 values
+const MAX_POINTS = 15;
 
 /* =========================================================
    3. CHARTS
@@ -393,7 +392,7 @@ function setCard(cardId, valId, tagId, value, status, level){
 }
 
 /* =========================================================
-   NEW — Load last 15 rows directly from Google Sheets CSV
+   Load last 15 rows from Google Sheets CSV
    ========================================================= */
 function parseCSV(text){
   const rows = [];
@@ -430,7 +429,6 @@ async function loadRecentFromSheet(){
   }
 
   setCloud('loading history…', false);
-  console.log('[Sheet] Fetching history:', SHEETS_CSV_URL);
 
   try {
     const res  = await fetch(SHEETS_CSV_URL, { cache: 'no-store' });
@@ -444,19 +442,12 @@ async function loadRecentFromSheet(){
       return;
     }
 
-    // First row = header
     const dataRows = rows.slice(1).filter(r => r.length >= 12 && r[0]);
-
-    // Take the last N rows
     const slice = dataRows.slice(-HISTORY_LIMIT);
 
-    // Clear charts before seeding
     labels.length = 0; hrData.length = 0; spo2Data.length = 0;
     axData.length = 0; ayData.length = 0; azData.length = 0;
 
-    // Column order matches HEADERS:
-    // 0 Timestamp | 1 HR | 2 SpO2 | 3 ax | 4 ay | 5 az | 6 mag | 7 tilt
-    // 8 Fall      | 9 Touch | 10 Score | 11 Status
     for (const r of slice){
       pushPoint(
         num(r[1]),
@@ -479,7 +470,7 @@ async function loadRecentFromSheet(){
 }
 
 /* =========================================================
-   GOOGLE SHEETS SAVER (POST — unchanged)
+   GOOGLE SHEETS SAVER (POST)
    ========================================================= */
 async function saveToSheets(payload, reason = 'periodic'){
   if (!SHEETS_WEBHOOK_URL || SHEETS_WEBHOOK_URL.includes('PASTE_YOUR')) return;
@@ -630,8 +621,11 @@ function analyze({ hr, spo2, mag, tilt, fall, touch }){
 
   if (touch){
     score -= 8;
-    insights.push({ level:'warn', icon:'🖐️', title:'Touch / SOS Triggered',
-                    text:'The manual touch trigger has been activated — the wearer may be requesting help.' });
+    insights.push({ level:'warn', icon:'🖐️', title:'Touch Trigger Active',
+                    text:'The touch trigger has been activated — the wearer may need assistance.' });
+  } else {
+    insights.push({ level:'good', icon:'✅', title:'Touch Trigger Inactive',
+                    text:'The touch trigger is currently idle.' });
   }
 
   score = clamp(Math.round(score), 0, 100);
@@ -726,7 +720,7 @@ function handlePayload(raw){
 
   setCard('cardTouch','touchVal','touchTag',
           touch ? 'PRESSED' : 'IDLE',
-          touch ? 'SOS triggered' : 'Not triggered',
+          touch ? 'Triggered' : 'Not triggered',
           touch ? 'warn' : 'good');
 
   pushPoint(hr, spo2, ax, ay, az);
@@ -755,7 +749,7 @@ function handlePayload(raw){
   } else if (touch){
     banner.classList.remove('hidden');
     $('bannerIcon').textContent = '🖐️';
-    $('bannerText').textContent = 'TOUCH / SOS TRIGGER ACTIVATED by the wearer.';
+    $('bannerText').textContent = 'TOUCH TRIGGER ACTIVATED by the wearer.';
   } else {
     banner.classList.add('hidden');
   }
@@ -770,7 +764,7 @@ function handlePayload(raw){
       state.prevFall = fall;
     }
     if (state.prevTouch !== touch){
-      addLog(touch ? 'warn' : 'good', touch ? '🖐️ Touch / SOS trigger pressed.' : 'Touch trigger released.');
+      addLog(touch ? 'warn' : 'good', touch ? '🖐️ Touch trigger pressed.' : 'Touch trigger released.');
       state.prevTouch = touch;
     }
     if (state.prevHrZone !== result.hrZone){
@@ -846,10 +840,8 @@ async function connect(){
   setConn('warn', 'Connecting…');
   setCloud('idle', false);
 
-  // 1. Seed chart from Google Sheets (last 15 rows)
   await loadRecentFromSheet();
 
-  // 2. Connect to Firebase for live updates
   try {
     await signInWithEmailAndPassword(auth, AUTH_EMAIL, AUTH_PASS);
   } catch (e){
