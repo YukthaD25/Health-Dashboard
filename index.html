@@ -256,9 +256,6 @@ const auth = getAuth(app);
 
 /* =========================================================
    GOOGLE SHEETS CONFIG
-   ---------------------------------------------------------
-   • Paste your Spreadsheet ID below.
-   • The sheet must be shared "Anyone with the link → Viewer".
    ========================================================= */
 const SPREADSHEET_ID = '1wUl-47qPJtaNRCg58auFEuCtU_f5bYcBZVRS_Zj4YpY';
 const SHEET_TAB_NAME = 'Log';
@@ -272,9 +269,8 @@ const SHEETS_CSV_URL =
 const SHEETS_WEBHOOK_URL = 'https://script.google.com/macros/s/AKfycbwFU28P7PBVULhsxcOEW2RWY5c9T1luMWo2t8ejigJul07908S22WsiXNCEYGybrcvF/exec';
 const SHEETS_SECRET      = 'iotProject@123';
 
-const SAVE_INTERVAL_MS   = 30_000;
-const SAVE_ON_ALERTS     = true;
-const ALERT_DEBOUNCE_MS  = 5_000;
+const ALERT_DEBOUNCE_MS  = 5_000;   // min gap between alert-driven saves
+const CHANGE_MIN_GAP_MS  = 10_000;  // min gap between change-driven saves
 
 /* =========================================================
    2. DOM HELPERS
@@ -349,7 +345,8 @@ const state = {
   prevFall: null, prevTouch: null,
   prevHrZone: null, prevSpo2Zone: null,
   prevImpact: false, packets: 0,
-  latest: null, lastSavedAt: 0, savedCount: 0
+  latest: null, lastSavedAt: 0, savedCount: 0,
+  lastFingerprint: ''          // ← tracks last saved payload for change detection
 };
 
 const num  = (v) => { const f = parseFloat(v); return Number.isFinite(f) ? f : null; };
@@ -470,9 +467,50 @@ async function loadRecentFromSheet(){
 }
 
 /* =========================================================
+   CHANGE-AWARE SAVE LOGIC
+   ---------------------------------------------------------
+   • Saves ONLY when the sensor payload actually changes.
+   • Duplicate readings (same HR / SpO₂ / accel / flags) are
+     collapsed into a single row.
+   • Critical alerts always save immediately (bypassing the
+     change check) with a 5-second debounce.
+   ========================================================= */
+function rowFingerprint(p){
+  if (!p) return '';
+  const r = (n) => (n === null || n === undefined) ? '' : Math.round(n * 100) / 100;
+  return [
+    r(p.hr), r(p.spo2),
+    r(p.ax), r(p.ay), r(p.az),
+    p.fall ? 1 : 0, p.touch ? 1 : 0
+  ].join('|');
+}
+
+function maybeSaveOnChange(payload){
+  const fp = rowFingerprint(payload);
+
+  // 1) Critical alerts — always save, ignore change check
+  const critical = payload.fall || payload.touch
+    || (payload.spo2 !== null && payload.spo2 < 90)
+    || (payload.hr   !== null && (payload.hr < 45 || payload.hr > 130));
+
+  if (critical && Date.now() - state.lastSavedAt > ALERT_DEBOUNCE_MS){
+    state.lastFingerprint = fp;
+    saveToSheets(buildSheetRow(payload), 'alert');
+    return;
+  }
+
+  // 2) Non-critical — save only if the payload differs from the last saved one
+  if (fp === state.lastFingerprint) return;   // nothing changed → skip
+  if (Date.now() - state.lastSavedAt < CHANGE_MIN_GAP_MS) return;  // min gap
+
+  state.lastFingerprint = fp;
+  saveToSheets(buildSheetRow(payload), 'change');
+}
+
+/* =========================================================
    GOOGLE SHEETS SAVER (POST)
    ========================================================= */
-async function saveToSheets(payload, reason = 'periodic'){
+async function saveToSheets(payload, reason = 'change'){
   if (!SHEETS_WEBHOOK_URL || SHEETS_WEBHOOK_URL.includes('PASTE_YOUR')) return;
   setCloud('saving…', false);
   try {
@@ -786,17 +824,13 @@ function handlePayload(raw){
   const ts = d.timestamp ? new Date(d.timestamp) : new Date();
   $('lastUpdate').textContent = 'Updated ' + (isNaN(ts) ? timeStr() : timeStr(ts));
 
+  /* =========================================================
+     STORE LATEST + CHANGE-AWARE SAVE
+     ========================================================= */
   state.latest = { hr, spo2, ax, ay, az, mag, tilt, fall, touch,
                    score: result.score, statusText: result.hrZone + '/' + result.spo2Zone };
 
-  if (SAVE_ON_ALERTS){
-    const critical = fall || touch
-      || (spo2 !== null && spo2 < 90)
-      || (hr !== null && (hr < 45 || hr > 130));
-    if (critical && Date.now() - state.lastSavedAt > ALERT_DEBOUNCE_MS){
-      saveToSheets(buildSheetRow(state.latest), 'alert');
-    }
-  }
+  maybeSaveOnChange(state.latest);
 }
 
 /* =========================================================
@@ -874,13 +908,10 @@ async function connect(){
 connect();
 
 /* =========================================================
-   PERIODIC SAVE TIMER
+   NOTE: The periodic save timer has been REMOVED.
+   Rows are now written ONLY when the payload changes
+   or when a critical alert fires.
    ========================================================= */
-setInterval(() => {
-  if (state.latest && Date.now() - state.lastSavedAt >= SAVE_INTERVAL_MS){
-    saveToSheets(buildSheetRow(state.latest), 'periodic');
-  }
-}, 5_000);
 </script>
 </body>
 </html>
