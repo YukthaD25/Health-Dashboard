@@ -35,21 +35,12 @@
   }
   .brand h1{margin:0;font-size:19px;letter-spacing:.2px;}
   .brand p{margin:2px 0 0;font-size:12px;color:var(--muted);}
-  .right{display:flex;flex-direction:column;gap:10px;align-items:flex-end;}
   .status{display:flex;align-items:center;gap:10px;font-size:13px;color:var(--muted);}
   .dot{width:10px;height:10px;border-radius:50%;background:#64748b;}
   .dot.good{background:var(--good);animation:ping 1.8s infinite;}
   .dot.warn{background:var(--warn);}
   .dot.bad{background:var(--bad);animation:ping 1.2s infinite;}
   @keyframes ping{0%{box-shadow:0 0 0 0 currentColor}70%{box-shadow:0 0 0 9px transparent}100%{box-shadow:0 0 0 0 transparent}}
-
-  .pathbar{display:flex;gap:8px;align-items:center;}
-  .pathinput{
-    background:#0c1425;border:1px solid var(--border);border-radius:9px;color:var(--text);
-    padding:7px 11px;font-size:12.5px;min-width:230px;outline:none;
-    font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
-  }
-  .pathinput:focus{border-color:var(--accent);}
 
   /* ---------- Alert banner ---------- */
   .banner{
@@ -129,7 +120,6 @@
   .log-item.warn{border-left-color:var(--warn);}
   .log-item.bad {border-left-color:var(--bad);}
   .log-item .t{color:var(--muted);font-variant-numeric:tabular-nums;flex:none;}
-  .log-item code{font-family:ui-monospace,Menlo,monospace;color:#9fd0ff;}
   .btn{
     background:#1b2743;color:#c7d5f2;border:1px solid var(--border);border-radius:9px;
     padding:6px 13px;font-size:12px;cursor:pointer;font-weight:600;
@@ -149,20 +139,13 @@
       <div class="logo">❤️</div>
       <div>
         <h1>Health Monitoring Dashboard</h1>
-        <p>Firebase Realtime Database · Live Telemetry</p>
+        <p>Live patient telemetry</p>
       </div>
     </div>
-    <div class="right">
-      <div class="status">
-        <span id="connDot" class="dot"></span>
-        <span id="connText">Connecting…</span>
-        <span class="muted" id="lastUpdate"></span>
-      </div>
-      <div class="pathbar">
-        <input id="pathInput" class="pathinput" placeholder="auto-detect…  e.g. /sensor_data" />
-        <button id="pathBtn" class="btn">Connect</button>
-        <button id="reprobeBtn" class="btn">Auto‑detect</button>
-      </div>
+    <div class="status">
+      <span id="connDot" class="dot warn"></span>
+      <span id="connText">Connecting…</span>
+      <span class="muted" id="lastUpdate"></span>
     </div>
   </header>
 
@@ -229,7 +212,7 @@
             <small>SCORE</small>
           </div>
         </div>
-        <div class="summary" id="summaryText">Waiting for the first data packet from Firebase…</div>
+        <div class="summary" id="summaryText">Waiting for the first data packet…</div>
       </div>
       <ul class="insights" id="insights"></ul>
     </div>
@@ -256,7 +239,7 @@ import {
   getDatabase, ref, onValue, get
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
 import {
-  getAuth, signInWithEmailAndPassword, onAuthStateChanged
+  getAuth, signInWithEmailAndPassword
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 
 const firebaseConfig = {
@@ -415,7 +398,6 @@ function analyze({ hr, spo2, mag, tilt, fall, touch }){
   const insights = [];
   let score = 100;
 
-  /* ---- Heart rate ---- */
   let hrZone = 'unknown';
   if (hr === null){
     insights.push({ level:'warn', icon:'❔', title:'Heart Rate — no data',
@@ -442,7 +424,6 @@ function analyze({ hr, spo2, mag, tilt, fall, touch }){
                     text:`${hr} bpm is within the healthy 60–100 bpm range.` });
   }
 
-  /* ---- SpO2 ---- */
   let spo2Zone = 'unknown';
   if (spo2 === null){
     insights.push({ level:'warn', icon:'❔', title:'SpO₂ — no data',
@@ -461,7 +442,6 @@ function analyze({ hr, spo2, mag, tilt, fall, touch }){
                     text:`SpO₂ is ${spo2}% — well within the healthy 95–100% range.` });
   }
 
-  /* ---- Motion ---- */
   if (mag !== null){
     const dev = Math.abs(mag - 9.81);
     if (mag > 25){
@@ -477,7 +457,6 @@ function analyze({ hr, spo2, mag, tilt, fall, touch }){
     }
   }
 
-  /* ---- Tilt ---- */
   if (tilt !== null){
     if (tilt > 60){
       insights.push({ level:'warn', icon:'📐', title:'Large Body Tilt',
@@ -488,7 +467,6 @@ function analyze({ hr, spo2, mag, tilt, fall, touch }){
     }
   }
 
-  /* ---- Fall ---- */
   if (fall){
     score -= 45;
     insights.push({ level:'bad', icon:'🚨', title:'Fall Alert Active',
@@ -498,7 +476,6 @@ function analyze({ hr, spo2, mag, tilt, fall, touch }){
                     text:'The fall-detection flag is currently clear.' });
   }
 
-  /* ---- Touch ---- */
   if (touch){
     score -= 8;
     insights.push({ level:'warn', icon:'🖐️', title:'Touch / SOS Triggered',
@@ -530,7 +507,6 @@ function renderAnalysis({ insights, score }, summary){
    ========================================================= */
 const SENSOR_KEY_RE = /^(heart_?rate|hr|sp_?o2|oxygen|accel_?[xyz]|fall_?alert|touch_?trigger)$/i;
 
-/** Recursively locate the first object that looks like a sensor packet. */
 function findSensorObject(obj, depth = 0){
   if (!obj || typeof obj !== 'object' || depth > 5) return null;
   const keys = Object.keys(obj);
@@ -545,7 +521,6 @@ function findSensorObject(obj, depth = 0){
 function handlePayload(raw){
   if (!raw || typeof raw !== 'object') return;
 
-  /* unwrap common wrappers, then deep-search as a last resort */
   let d = raw;
   if (d.sensor_data && typeof d.sensor_data === 'object') d = d.sensor_data;
   if (d.data && typeof d.data === 'object' && Object.keys(d).length <= 2) d = d.data;
@@ -672,169 +647,76 @@ function handlePayload(raw){
 }
 
 /* =========================================================
-   8. PATH PROBING + LIVE LISTENER
+   8. SILENT PATH DETECTION + LIVE LISTENER
    ========================================================= */
-let activePath   = null;
-let activeUnsub  = null;
-let authUid      = null;
+let activeUnsub = null;
 
-const normPath = (p) => '/' + String(p || '').trim().replace(/^\/+|\/+$/g, '');
-
-function candidatePaths(){
-  const list = [
-    '/sensor_data', '/SensorData', '/sensorData',
-    '/health', '/healthData', '/data', '/live', '/readings', '/sensor', '/telemetry'
-  ];
-  if (authUid){
-    list.push(
-      `/users/${authUid}`, `/users/${authUid}/sensor_data`,
-      `/users/${authUid}/health`, `/devices/${authUid}`,
-      `/${authUid}`, `/${authUid}/sensor_data`
-    );
-  }
-  list.push('/');                       // root last — most likely to be denied
-  return [...new Set(list)];
-}
-
-/** Try to read a path once. Returns {path, ok, exists, error}. */
 async function probe(path){
   try {
     const snap = await get(ref(db, path));
-    return { path, ok:true, exists: snap.exists() };
-  } catch (e){
-    return { path, ok:false, error: e.code || e.message };
+    return { ok:true, exists: snap.exists() };
+  } catch {
+    return { ok:false };
   }
 }
 
-function detach(){
-  if (activeUnsub){ activeUnsub(); activeUnsub = null; }
-}
-
 function attach(path){
-  detach();
-  activePath = path;
-  $('pathInput').value = path;
+  if (activeUnsub) activeUnsub();
 
-  const started = { done:false };
+  let started = false;
 
   activeUnsub = onValue(
     ref(db, path),
     (snap) => {
       const val = snap.val();
-      if (val === null || val === undefined){
-        if (!started.done){
-          started.done = true;
-          setConn('warn', `Connected to ${path} — no data yet`);
-          addLog('warn', `Path <code>${path}</code> exists but is currently empty.`);
-        }
-        return;
-      }
-      if (!started.done){
-        started.done = true;
-        setConn('ok', 'Live · ' + path);
-        addLog('good', `✅ Live listener attached to <code>${path}</code>.`);
+      if (val === null || val === undefined) return;
+      if (!started){
+        started = true;
+        setConn('ok', 'Live · receiving data');
       }
       handlePayload(val);
     },
     (err) => {
-      setConn('bad', 'DB error: ' + (err.code || 'unknown'));
-      addLog('bad', `Listener on <code>${path}</code> failed: ${err.code || err.message}`);
+      console.warn('Listener error:', err.code);
+      setConn('bad', 'Connection error');
     }
   );
 }
 
-/** Probe all candidates and attach to the first readable one with data. */
-async function autoDetect(){
-  detach();
-  setConn('warn', 'Auto-detecting data path…');
-  addLog('warn', 'Probing candidate database paths…');
-
-  const paths = candidatePaths();
-  let firstReadableButEmpty = null;
-
-  for (const p of paths){
-    const r = await probe(p);
-
-    if (!r.ok){
-      // only log the interesting ones to keep the log readable
-      if (p === '/' || p === '/sensor_data'){
-        addLog('bad', `✗ <code>${p}</code> — ${r.error}`);
-      }
-      continue;
-    }
-
-    if (r.exists){
-      addLog('good', `✓ Found data at <code>${p}</code>.`);
-      attach(p);
-      return true;
-    }
-
-    if (!firstReadableButEmpty) firstReadableButEmpty = p;
-  }
-
-  if (firstReadableButEmpty){
-    addLog('warn', `Readable but empty: <code>${firstReadableButEmpty}</code>. Listening anyway.`);
-    attach(firstReadableButEmpty);
-    return true;
-  }
-
-  setConn('bad', 'No readable path — check DB rules');
-  addLog('bad',
-    'No readable path found. Open <b>Firebase Console → Realtime Database → Rules</b> and confirm ' +
-    'that the signed-in user may read the data. A typical test rule is ' +
-    '<code>{".read": "auth != null", ".write": "auth != null"}</code> or ' +
-    '<code>{"sensor_data": {".read": true}}</code>.'
-  );
-  return false;
-}
-
-/* ---- manual path buttons ---- */
-$('pathBtn').addEventListener('click', async () => {
-  const p = normPath($('pathInput').value);
-  if (!p || p === '/'){ autoDetect(); return; }
-  setConn('warn', `Testing ${p}…`);
-  const r = await probe(p);
-  if (!r.ok){
-    setConn('bad', 'Denied: ' + p);
-    addLog('bad', `<code>${p}</code> — ${r.error}`);
-    return;
-  }
-  addLog(r.exists ? 'good' : 'warn',
-         r.exists ? `✓ Manual path <code>${p}</code> has data.` : `<code>${p}</code> readable but empty.`);
-  attach(p);
-});
-
-$('reprobeBtn').addEventListener('click', () => autoDetect());
-
-/* =========================================================
-   9. BOOT: AUTH FIRST, THEN CONNECT
-   ========================================================= */
-onAuthStateChanged(auth, (user) => {
-  authUid = user ? user.uid : null;
-  if (user) addLog('good', `Signed in as <b>${user.email}</b> (uid ${user.uid.slice(0,8)}…).`);
-});
-
-(async function boot(){
-  setConn('warn', 'Authenticating…');
+async function connect(){
+  setConn('warn', 'Connecting…');
 
   try {
-    const cred = await signInWithEmailAndPassword(auth, AUTH_EMAIL, AUTH_PASS);
-    authUid = cred.user.uid;
-    setConn('warn', 'Authenticated · locating data…');
-    addLog('good', `Authentication successful for <b>${cred.user.email}</b>.`);
-  } catch (err){
-    console.warn('Auth failed:', err.code, err.message);
-    setConn('warn', 'Auth failed (' + (err.code || 'error') + ') · trying anyway…');
-    addLog('bad',
-      `Sign-in failed: <b>${err.code || err.message}</b>. ` +
-      'Continuing with unauthenticated access — if the database requires auth, reads will be denied.'
-    );
+    await signInWithEmailAndPassword(auth, AUTH_EMAIL, AUTH_PASS);
+  } catch (e){
+    console.warn('Auth failed:', e.code);
   }
 
-  // Wait for the auth token to propagate before the first read.
+  // Give the auth token a moment to propagate before the first read.
   await new Promise(r => setTimeout(r, 400));
-  await autoDetect();
-})();
+
+  const candidates = [
+    '/sensor_data', '/SensorData', '/sensorData',
+    '/health', '/healthData', '/data', '/live',
+    '/readings', '/sensor', '/telemetry', '/'
+  ];
+
+  let emptyPath = null;
+
+  for (const p of candidates){
+    const r = await probe(p);
+    if (!r.ok) continue;
+    if (r.exists){ attach(p); return; }
+    if (!emptyPath) emptyPath = p;
+  }
+
+  if (emptyPath){ attach(emptyPath); return; }
+
+  setConn('bad', 'No data available');
+  addLog('bad', 'Unable to connect to the database. Please check the connection.');
+}
+
+connect();
 </script>
 </body>
 </html>
