@@ -22,7 +22,6 @@
   }
   .wrap{max-width:1440px;margin:0 auto;display:flex;flex-direction:column;gap:16px;}
 
-  /* ---------- Header ---------- */
   .topbar{
     display:flex;flex-wrap:wrap;gap:14px;align-items:center;justify-content:space-between;
     background:linear-gradient(160deg,var(--panel),var(--panel2));
@@ -45,7 +44,6 @@
   .cloud{font-size:11.5px;color:var(--muted);}
   .cloud b{color:#9fd0ff;}
 
-  /* ---------- Alert banner ---------- */
   .banner{
     display:flex;align-items:center;gap:12px;padding:14px 18px;border-radius:14px;font-weight:700;
     border:1px solid #ff4d5e77;background:linear-gradient(90deg,#ff4d5e2e,#ff4d5e08);color:#ffd9dd;
@@ -54,7 +52,6 @@
   @keyframes bannerPulse{0%,100%{box-shadow:0 0 0 0 #ff4d5e55}50%{box-shadow:0 0 0 10px #ff4d5e00}}
   .hidden{display:none !important;}
 
-  /* ---------- Cards ---------- */
   .cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:14px;}
   .card{
     position:relative;overflow:hidden;padding:15px 17px;border-radius:16px;
@@ -77,7 +74,6 @@
   .card.warn .tag{background:#3d2f0c;color:#fbbf24;}
   .card.bad  .tag{background:#43141c;color:#ff7b8a;}
 
-  /* ---------- Panels ---------- */
   .grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px;}
   @media (max-width:960px){.grid2{grid-template-columns:1fr;}}
   .panel{
@@ -87,7 +83,6 @@
   .panel h2{margin:0 0 14px;font-size:14px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-weight:700;}
   .chart-box{position:relative;height:255px;}
 
-  /* ---------- Analysis ---------- */
   .analysis-top{display:flex;gap:18px;align-items:center;margin-bottom:14px;}
   .ring{
     width:112px;height:112px;border-radius:50%;flex:none;display:grid;place-items:center;position:relative;
@@ -111,7 +106,6 @@
   ul.insights li strong{display:block;font-size:12.5px;margin-bottom:2px;color:#fff;}
   ul.insights li span{color:#a9bbdd;}
 
-  /* ---------- Log ---------- */
   .log{display:flex;flex-direction:column;gap:7px;max-height:320px;overflow-y:auto;padding-right:4px;}
   .log::-webkit-scrollbar{width:6px;}
   .log::-webkit-scrollbar-thumb{background:#26375a;border-radius:6px;}
@@ -136,7 +130,6 @@
 <body>
 <div class="wrap">
 
-  <!-- HEADER -->
   <header class="topbar">
     <div class="brand">
       <div class="logo">❤️</div>
@@ -155,13 +148,11 @@
     </div>
   </header>
 
-  <!-- ALERT BANNER -->
   <div id="banner" class="banner hidden">
     <span id="bannerIcon" style="font-size:20px">🚨</span>
     <span id="bannerText">Alert</span>
   </div>
 
-  <!-- VITAL CARDS -->
   <section class="cards">
     <div class="card" id="cardHr">
       <div class="label">Heart Rate</div>
@@ -195,7 +186,6 @@
     </div>
   </section>
 
-  <!-- CHARTS -->
   <section class="grid2">
     <div class="panel">
       <h2>Vitals Trend</h2>
@@ -207,7 +197,6 @@
     </div>
   </section>
 
-  <!-- ANALYSIS + LOG -->
   <section class="grid2">
     <div class="panel">
       <h2>Health Analysis</h2>
@@ -266,19 +255,33 @@ const db   = getDatabase(app);
 const auth = getAuth(app);
 
 /* =========================================================
-   GOOGLE SHEETS WEBHOOK CONFIG
+   GOOGLE SHEETS CONFIG  (NEW)
+   ---------------------------------------------------------
+   • Paste your Spreadsheet ID below.
+   • The sheet must be shared "Anyone with the link → Viewer"
+     so the browser can read it without Apps Script changes.
    ========================================================= */
+const SPREADSHEET_ID = '1wUl-47qPJtaNRCg58auFEuCtU_f5bYcBZVRS_Zj4YpY';
+const SHEET_TAB_NAME = 'Log';
+const HISTORY_LIMIT  = 15;
+
+const SHEETS_CSV_URL =
+  `https://docs.google.com/spreadsheets/d/${SPREADSHEET_ID}` +
+  `/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(SHEET_TAB_NAME)}`;
+
+/* Existing POST webhook (unchanged) */
 const SHEETS_WEBHOOK_URL = 'https://script.google.com/macros/s/AKfycbwFU28P7PBVULhsxcOEW2RWY5c9T1luMWo2t8ejigJul07908S22WsiXNCEYGybrcvF/exec';
-const SHEETS_SECRET      = 'iotProject@123';   // must match Apps Script SECRET
-const SAVE_INTERVAL_MS   = 30_000;             // periodic save every 30 s
-const SAVE_ON_ALERTS     = true;               // save immediately on fall / SOS / critical vitals
-const ALERT_DEBOUNCE_MS  = 5_000;              // minimum gap between alert-driven saves
+const SHEETS_SECRET      = 'iotProject@123';
+
+const SAVE_INTERVAL_MS   = 30_000;
+const SAVE_ON_ALERTS     = true;
+const ALERT_DEBOUNCE_MS  = 5_000;
 
 /* =========================================================
    2. DOM HELPERS
    ========================================================= */
 const $ = (id) => document.getElementById(id);
-const MAX_POINTS = 40;
+const MAX_POINTS = 15;                     // chart keeps last 15 values
 
 /* =========================================================
    3. CHARTS
@@ -347,9 +350,7 @@ const state = {
   prevFall: null, prevTouch: null,
   prevHrZone: null, prevSpo2Zone: null,
   prevImpact: false, packets: 0,
-  latest: null,               // most-recent payload, used by the sheet saver
-  lastSavedAt: 0,             // throttle timestamp
-  savedCount: 0               // how many rows sent this session
+  latest: null, lastSavedAt: 0, savedCount: 0
 };
 
 const num  = (v) => { const f = parseFloat(v); return Number.isFinite(f) ? f : null; };
@@ -367,13 +368,12 @@ function setConn(level, text){
   dot.className = 'dot ' + (level === 'ok' ? 'good' : level);
   $('connText').textContent = text;
 }
-
 function setCloud(text, ok){
   $('cloudStatus').innerHTML = `Cloud log: <b style="color:${ok ? '#4ade80' : '#ffb020'}">${text}</b>`;
 }
 
-function pushPoint(hr, spo2, ax, ay, az){
-  labels.push(timeStr());
+function pushPoint(hr, spo2, ax, ay, az, label){
+  labels.push(label || timeStr());
   hrData.push(hr); spo2Data.push(spo2);
   axData.push(ax); ayData.push(ay); azData.push(az);
   while (labels.length > MAX_POINTS){
@@ -393,23 +393,104 @@ function setCard(cardId, valId, tagId, value, status, level){
 }
 
 /* =========================================================
-   GOOGLE SHEETS SAVER
+   NEW — Load last 15 rows directly from Google Sheets CSV
+   ========================================================= */
+function parseCSV(text){
+  const rows = [];
+  let row = [], cur = '', inQuotes = false;
+  for (let i = 0; i < text.length; i++){
+    const c = text[i];
+    if (inQuotes){
+      if (c === '"'){
+        if (text[i+1] === '"'){ cur += '"'; i++; }
+        else inQuotes = false;
+      } else cur += c;
+    } else {
+      if (c === '"')       inQuotes = true;
+      else if (c === ',')  { row.push(cur); cur = ''; }
+      else if (c === '\n') { row.push(cur); rows.push(row); row = []; cur = ''; }
+      else if (c === '\r') { /* skip */ }
+      else                 cur += c;
+    }
+  }
+  if (cur !== '' || row.length){ row.push(cur); rows.push(row); }
+  return rows;
+}
+
+function extractHms(ts){
+  if (!ts) return '';
+  const m = String(ts).match(/(\d{2}):(\d{2}):(\d{2})/);
+  return m ? `${m[1]}:${m[2]}:${m[3]}` : String(ts);
+}
+
+async function loadRecentFromSheet(){
+  if (!SPREADSHEET_ID || SPREADSHEET_ID.includes('PASTE_YOUR')){
+    console.warn('[Sheet] SPREADSHEET_ID not set — skipping history load.');
+    return;
+  }
+
+  setCloud('loading history…', false);
+  console.log('[Sheet] Fetching history:', SHEETS_CSV_URL);
+
+  try {
+    const res  = await fetch(SHEETS_CSV_URL, { cache: 'no-store' });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const text = await res.text();
+
+    const rows = parseCSV(text);
+    if (rows.length < 2){
+      setCloud('sheet empty', false);
+      addLog('warn', 'Google Sheet has no data rows yet — chart will fill from live data.');
+      return;
+    }
+
+    // First row = header
+    const dataRows = rows.slice(1).filter(r => r.length >= 12 && r[0]);
+
+    // Take the last N rows
+    const slice = dataRows.slice(-HISTORY_LIMIT);
+
+    // Clear charts before seeding
+    labels.length = 0; hrData.length = 0; spo2Data.length = 0;
+    axData.length = 0; ayData.length = 0; azData.length = 0;
+
+    // Column order matches HEADERS:
+    // 0 Timestamp | 1 HR | 2 SpO2 | 3 ax | 4 ay | 5 az | 6 mag | 7 tilt
+    // 8 Fall      | 9 Touch | 10 Score | 11 Status
+    for (const r of slice){
+      pushPoint(
+        num(r[1]),
+        num(r[2]),
+        num(r[3]) ?? 0,
+        num(r[4]) ?? 0,
+        num(r[5]) ?? 0,
+        extractHms(r[0])
+      );
+    }
+
+    setCloud(`✓ ${slice.length} history rows loaded`, true);
+    addLog('good', `📊 Loaded last ${slice.length} rows from Google Sheets into the chart.`);
+
+  } catch (e){
+    setCloud('history load failed', false);
+    addLog('bad', `Could not read Google Sheet: ${e.message}. Make sure the sheet is shared "Anyone with the link → Viewer" and the ID is correct.`);
+    console.warn('[Sheet] History fetch failed:', e);
+  }
+}
+
+/* =========================================================
+   GOOGLE SHEETS SAVER (POST — unchanged)
    ========================================================= */
 async function saveToSheets(payload, reason = 'periodic'){
   if (!SHEETS_WEBHOOK_URL || SHEETS_WEBHOOK_URL.includes('PASTE_YOUR')) return;
-
   setCloud('saving…', false);
-
   try {
     const res = await fetch(SHEETS_WEBHOOK_URL, {
       method: 'POST',
-      // text/plain avoids a CORS preflight with Apps Script
       headers: { 'Content-Type': 'text/plain;charset=utf-8' },
       body: JSON.stringify({ secret: SHEETS_SECRET, reason, ...payload })
     });
-
     const data = await res.json().catch(() => ({}));
-
     if (data && data.ok){
       state.lastSavedAt = Date.now();
       state.savedCount++;
@@ -431,9 +512,7 @@ function buildSheetRow({ hr, spo2, ax, ay, az, mag, tilt, fall, touch, score, st
     timestamp: new Date().toISOString(),
     heartRate: hr,
     spO2: spo2,
-    accel_x: ax,
-    accel_y: ay,
-    accel_z: az,
+    accel_x: ax, accel_y: ay, accel_z: az,
     magnitude: mag !== null ? +mag.toFixed(3) : null,
     tilt: tilt !== null ? +tilt.toFixed(2) : null,
     fallAlert: !!fall,
@@ -615,7 +694,6 @@ function handlePayload(raw){
 
   state.packets++;
 
-  /* --- cards --- */
   let hrLevel='', hrText='';
   if (hr === null){ hrText='no data'; }
   else if (hr < 60){ hrLevel='warn'; hrText='Bradycardia'; }
@@ -651,10 +729,8 @@ function handlePayload(raw){
           touch ? 'SOS triggered' : 'Not triggered',
           touch ? 'warn' : 'good');
 
-  /* --- charts --- */
   pushPoint(hr, spo2, ax, ay, az);
 
-  /* --- analysis --- */
   const result = analyze({ hr, spo2, mag, tilt, fall, touch });
   const bits = [];
   bits.push(`<b>${state.packets}</b> packets received.`);
@@ -663,7 +739,6 @@ function handlePayload(raw){
   bits.push(fall ? '<b style="color:#ff7b8a">Fall alert is ACTIVE.</b>' : 'No fall detected.');
   renderAnalysis(result, bits.join(' '));
 
-  /* --- banner --- */
   const banner = $('banner');
   if (fall){
     banner.classList.remove('hidden');
@@ -685,7 +760,6 @@ function handlePayload(raw){
     banner.classList.add('hidden');
   }
 
-  /* --- state-change event logging --- */
   if (state.prevFall === null){
     state.prevFall = fall; state.prevTouch = touch;
     state.prevHrZone = result.hrZone; state.prevSpo2Zone = result.spo2Zone;
@@ -718,13 +792,9 @@ function handlePayload(raw){
   const ts = d.timestamp ? new Date(d.timestamp) : new Date();
   $('lastUpdate').textContent = 'Updated ' + (isNaN(ts) ? timeStr() : timeStr(ts));
 
-  /* =========================================================
-     STORE LATEST + SAVE TO GOOGLE SHEETS
-     ========================================================= */
   state.latest = { hr, spo2, ax, ay, az, mag, tilt, fall, touch,
                    score: result.score, statusText: result.hrZone + '/' + result.spo2Zone };
 
-  // Save immediately on critical events
   if (SAVE_ON_ALERTS){
     const critical = fall || touch
       || (spo2 !== null && spo2 < 90)
@@ -776,6 +846,10 @@ async function connect(){
   setConn('warn', 'Connecting…');
   setCloud('idle', false);
 
+  // 1. Seed chart from Google Sheets (last 15 rows)
+  await loadRecentFromSheet();
+
+  // 2. Connect to Firebase for live updates
   try {
     await signInWithEmailAndPassword(auth, AUTH_EMAIL, AUTH_PASS);
   } catch (e){
