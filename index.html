@@ -1,0 +1,705 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Health Monitoring Dashboard</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+<style>
+  :root{
+    --bg:#070b16;
+    --panel:#101a2f;
+    --panel2:#16223c;
+    --border:#233251;
+    --text:#e9eefb;
+    --muted:#8ba0c6;
+    --accent:#4f8cff;
+    --good:#25d07a;
+    --warn:#ffb020;
+    --bad:#ff4d5e;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0;padding:20px;min-height:100vh;color:var(--text);
+    font-family:"Segoe UI",Inter,system-ui,-apple-system,Roboto,Arial,sans-serif;
+    background:
+      radial-gradient(1200px 600px at 8% -12%, #16295a66, transparent 60%),
+      radial-gradient(900px 520px at 100% 0%, #3d1a4a55, transparent 55%),
+      var(--bg);
+  }
+  .wrap{max-width:1440px;margin:0 auto;display:flex;flex-direction:column;gap:16px;}
+
+  /* ---------- Header ---------- */
+  .topbar{
+    display:flex;flex-wrap:wrap;gap:14px;align-items:center;justify-content:space-between;
+    background:linear-gradient(160deg,var(--panel),var(--panel2));
+    border:1px solid var(--border);border-radius:18px;padding:16px 20px;
+  }
+  .brand{display:flex;align-items:center;gap:14px;}
+  .logo{
+    width:46px;height:46px;border-radius:14px;display:grid;place-items:center;font-size:22px;
+    background:linear-gradient(135deg,#ff4d6d,#4f8cff);box-shadow:0 6px 20px #ff4d6d40;
+  }
+  .brand h1{margin:0;font-size:19px;letter-spacing:.2px;}
+  .brand p{margin:2px 0 0;font-size:12px;color:var(--muted);}
+  .status{display:flex;align-items:center;gap:10px;font-size:13px;color:var(--muted);}
+  .dot{width:10px;height:10px;border-radius:50%;background:#64748b;box-shadow:0 0 0 0 #64748b66;}
+  .dot.good{background:var(--good);animation:ping 1.8s infinite;}
+  .dot.warn{background:var(--warn);}
+  .dot.bad{background:var(--bad);animation:ping 1.2s infinite;}
+  @keyframes ping{0%{box-shadow:0 0 0 0 currentColor}70%{box-shadow:0 0 0 9px transparent}100%{box-shadow:0 0 0 0 transparent}}
+
+  /* ---------- Alert banner ---------- */
+  .banner{
+    display:flex;align-items:center;gap:12px;padding:14px 18px;border-radius:14px;font-weight:700;
+    border:1px solid #ff4d5e77;background:linear-gradient(90deg,#ff4d5e2e,#ff4d5e08);color:#ffd9dd;
+    animation:bannerPulse 1.6s infinite;
+  }
+  @keyframes bannerPulse{0%,100%{box-shadow:0 0 0 0 #ff4d5e55}50%{box-shadow:0 0 0 10px #ff4d5e00}}
+  .hidden{display:none !important;}
+
+  /* ---------- Cards ---------- */
+  .cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:14px;}
+  .card{
+    position:relative;overflow:hidden;padding:15px 17px;border-radius:16px;
+    background:linear-gradient(160deg,var(--panel),var(--panel2));
+    border:1px solid var(--border);
+    transition:border-color .25s, transform .25s;
+  }
+  .card:hover{transform:translateY(-2px);}
+  .card::after{content:"";position:absolute;left:0;top:0;height:3px;width:100%;background:var(--accent);opacity:.85;}
+  .card.good::after{background:var(--good);}
+  .card.warn::after{background:var(--warn);}
+  .card.bad::after{background:var(--bad);}
+  .card .label{font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);}
+  .card .value{font-size:31px;font-weight:700;margin-top:8px;font-variant-numeric:tabular-nums;line-height:1;}
+  .card .unit{font-size:13px;font-weight:500;color:var(--muted);margin-left:5px;}
+  .card .tag{
+    display:inline-block;margin-top:10px;font-size:11px;font-weight:700;letter-spacing:.04em;
+    padding:3px 9px;border-radius:20px;background:#1c2743;color:var(--muted);
+  }
+  .card.good .tag{background:#0f3a26;color:#4ade80;}
+  .card.warn .tag{background:#3d2f0c;color:#fbbf24;}
+  .card.bad  .tag{background:#43141c;color:#ff7b8a;}
+
+  /* ---------- Panels ---------- */
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px;}
+  @media (max-width:960px){.grid2{grid-template-columns:1fr;}}
+  .panel{
+    background:linear-gradient(160deg,var(--panel),var(--panel2));
+    border:1px solid var(--border);border-radius:18px;padding:16px 18px;
+  }
+  .panel h2{margin:0 0 14px;font-size:14px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-weight:700;}
+  .chart-box{position:relative;height:255px;}
+
+  /* ---------- Analysis ---------- */
+  .analysis-top{display:flex;gap:18px;align-items:center;margin-bottom:14px;}
+  .ring{
+    width:112px;height:112px;border-radius:50%;flex:none;display:grid;place-items:center;position:relative;
+    background:conic-gradient(#1c2743 0deg,#1c2743 360deg);transition:background .4s;
+  }
+  .ring::before{content:"";position:absolute;inset:9px;border-radius:50%;background:#0d1628;}
+  .ring span{position:relative;font-size:27px;font-weight:800;}
+  .ring small{position:relative;display:block;font-size:10px;color:var(--muted);text-align:center;letter-spacing:.1em;}
+  .analysis-top .summary{font-size:14px;line-height:1.55;color:#cdd9f2;}
+  .analysis-top .summary b{color:#fff;}
+
+  ul.insights{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:9px;}
+  ul.insights li{
+    display:flex;gap:11px;align-items:flex-start;padding:10px 12px;border-radius:12px;
+    background:#0d162880;border-left:3px solid var(--accent);font-size:13px;line-height:1.45;
+  }
+  ul.insights li.good{border-left-color:var(--good);}
+  ul.insights li.warn{border-left-color:var(--warn);}
+  ul.insights li.bad {border-left-color:var(--bad);}
+  ul.insights li .ico{font-size:15px;line-height:1.2;}
+  ul.insights li strong{display:block;font-size:12.5px;margin-bottom:2px;color:#fff;}
+  ul.insights li span{color:#a9bbdd;}
+
+  /* ---------- Log ---------- */
+  .log{display:flex;flex-direction:column;gap:7px;max-height:320px;overflow-y:auto;padding-right:4px;}
+  .log::-webkit-scrollbar{width:6px;}
+  .log::-webkit-scrollbar-thumb{background:#26375a;border-radius:6px;}
+  .log-item{
+    display:flex;gap:10px;font-size:12.5px;padding:8px 11px;border-radius:10px;
+    background:#0d162880;border-left:3px solid var(--accent);
+  }
+  .log-item.good{border-left-color:var(--good);}
+  .log-item.warn{border-left-color:var(--warn);}
+  .log-item.bad {border-left-color:var(--bad);}
+  .log-item .t{color:var(--muted);font-variant-numeric:tabular-nums;flex:none;}
+  .btn{
+    background:#1b2743;color:#c7d5f2;border:1px solid var(--border);border-radius:9px;
+    padding:6px 13px;font-size:12px;cursor:pointer;font-weight:600;
+  }
+  .btn:hover{background:#243255;}
+  .panel-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;}
+  .panel-head h2{margin:0;}
+  .muted{color:var(--muted);font-size:12px;}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <!-- HEADER -->
+  <header class="topbar">
+    <div class="brand">
+      <div class="logo">❤️</div>
+      <div>
+        <h1>Health Monitoring Dashboard</h1>
+        <p>Firebase Realtime Database · Live Telemetry</p>
+      </div>
+    </div>
+    <div class="status">
+      <span id="connDot" class="dot"></span>
+      <span id="connText">Connecting…</span>
+      <span class="muted" id="lastUpdate"></span>
+    </div>
+  </header>
+
+  <!-- ALERT BANNER -->
+  <div id="banner" class="banner hidden">
+    <span id="bannerIcon" style="font-size:20px">🚨</span>
+    <span id="bannerText">Alert</span>
+  </div>
+
+  <!-- VITAL CARDS -->
+  <section class="cards">
+    <div class="card" id="cardHr">
+      <div class="label">Heart Rate</div>
+      <div class="value"><span id="hrVal">--</span><span class="unit">bpm</span></div>
+      <div class="tag" id="hrTag">waiting…</div>
+    </div>
+    <div class="card" id="cardSpo2">
+      <div class="label">Blood Oxygen (SpO₂)</div>
+      <div class="value"><span id="spo2Val">--</span><span class="unit">%</span></div>
+      <div class="tag" id="spo2Tag">waiting…</div>
+    </div>
+    <div class="card" id="cardMag">
+      <div class="label">Accel Magnitude</div>
+      <div class="value"><span id="magVal">--</span><span class="unit">m/s²</span></div>
+      <div class="tag" id="magTag">waiting…</div>
+    </div>
+    <div class="card" id="cardTilt">
+      <div class="label">Body Tilt Angle</div>
+      <div class="value"><span id="tiltVal">--</span><span class="unit">°</span></div>
+      <div class="tag" id="tiltTag">waiting…</div>
+    </div>
+    <div class="card" id="cardFall">
+      <div class="label">Fall Detection</div>
+      <div class="value" id="fallVal">--</div>
+      <div class="tag" id="fallTag">waiting…</div>
+    </div>
+    <div class="card" id="cardTouch">
+      <div class="label">Touch / SOS Trigger</div>
+      <div class="value" id="touchVal">--</div>
+      <div class="tag" id="touchTag">waiting…</div>
+    </div>
+  </section>
+
+  <!-- CHARTS -->
+  <section class="grid2">
+    <div class="panel">
+      <h2>Vitals Trend</h2>
+      <div class="chart-box"><canvas id="vitalsChart"></canvas></div>
+    </div>
+    <div class="panel">
+      <h2>Motion · Accelerometer Axes</h2>
+      <div class="chart-box"><canvas id="accelChart"></canvas></div>
+    </div>
+  </section>
+
+  <!-- ANALYSIS + LOG -->
+  <section class="grid2">
+    <div class="panel">
+      <h2>Health Analysis</h2>
+      <div class="analysis-top">
+        <div class="ring" id="scoreRing">
+          <div>
+            <span id="scoreVal">--</span>
+            <small>SCORE</small>
+          </div>
+        </div>
+        <div class="summary" id="summaryText">Waiting for the first data packet from Firebase…</div>
+      </div>
+      <ul class="insights" id="insights"></ul>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head">
+        <h2>Event Log</h2>
+        <button class="btn" id="clearLog">Clear</button>
+      </div>
+      <div class="log" id="logBox">
+        <div class="log-item"><span class="t">--:--:--</span><span>Waiting for events…</span></div>
+      </div>
+    </div>
+  </section>
+
+</div>
+
+<script type="module">
+/* =========================================================
+   1. FIREBASE SETUP
+   ========================================================= */
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+import { getDatabase, ref, onValue } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
+import { getAuth, signInWithEmailAndPassword } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+
+const firebaseConfig = {
+  apiKey: "AIzaSyDjR52Qayic9GCwVHdsINg3jO6TnQetFZ8",
+  authDomain: "health-monitoring-eae46.firebaseapp.com",
+  databaseURL: "https://health-monitoring-eae46-default-rtdb.asia-southeast1.firebasedatabase.app",
+  projectId: "health-monitoring-eae46",
+  storageBucket: "health-monitoring-eae46.firebasestorage.app",
+  messagingSenderId: "892393194473",
+  appId: "1:892393194473:web:91c758dacb351b3bf74178"
+};
+
+const AUTH_EMAIL = "yuktha.23ise@cambridge.edu.in";
+const AUTH_PASS  = "1cd23is191";
+
+const app  = initializeApp(firebaseConfig);
+const db   = getDatabase(app);
+const auth = getAuth(app);
+
+/* =========================================================
+   2. DOM HELPERS
+   ========================================================= */
+const $ = (id) => document.getElementById(id);
+const MAX_POINTS = 40;
+
+/* =========================================================
+   3. CHARTS
+   ========================================================= */
+const labels = [], hrData = [], spo2Data = [];
+const axData = [], ayData = [], azData = [];
+
+Chart.defaults.color = '#8ba0c6';
+Chart.defaults.font.family = '"Segoe UI", Inter, system-ui, sans-serif';
+
+const vitalsChart = new Chart($('vitalsChart'), {
+  type: 'line',
+  data: {
+    labels,
+    datasets: [
+      { label:'Heart Rate (bpm)', data: hrData, yAxisID:'y', borderColor:'#ff4d6d',
+        backgroundColor:'rgba(255,77,109,.13)', tension:.35, borderWidth:2,
+        pointRadius:0, pointHoverRadius:4, fill:true },
+      { label:'SpO₂ (%)', data: spo2Data, yAxisID:'y1', borderColor:'#4fd1ff',
+        backgroundColor:'rgba(79,209,255,.10)', tension:.35, borderWidth:2,
+        pointRadius:0, pointHoverRadius:4, fill:true }
+    ]
+  },
+  options: {
+    responsive:true, maintainAspectRatio:false, animation:false,
+    interaction:{ mode:'index', intersect:false },
+    plugins:{ legend:{ labels:{ boxWidth:12, usePointStyle:true, pointStyle:'circle' } } },
+    scales:{
+      x:{ ticks:{ maxTicksLimit:6, color:'#6d80a5' }, grid:{ color:'#1b2743' } },
+      y:{ position:'left', suggestedMin:45, suggestedMax:135,
+          ticks:{ color:'#ff8fa3' }, grid:{ color:'#1b2743' },
+          title:{ display:true, text:'bpm', color:'#ff8fa3' } },
+      y1:{ position:'right', suggestedMin:80, suggestedMax:100,
+           ticks:{ color:'#6fd8ff' }, grid:{ drawOnChartArea:false },
+           title:{ display:true, text:'SpO₂ %', color:'#6fd8ff' } }
+    }
+  }
+});
+
+const accelChart = new Chart($('accelChart'), {
+  type: 'line',
+  data: {
+    labels,
+    datasets: [
+      { label:'accel_x', data: axData, borderColor:'#ff6b9d', backgroundColor:'transparent', tension:.35, borderWidth:2, pointRadius:0 },
+      { label:'accel_y', data: ayData, borderColor:'#7cf0a8', backgroundColor:'transparent', tension:.35, borderWidth:2, pointRadius:0 },
+      { label:'accel_z', data: azData, borderColor:'#ffd166', backgroundColor:'transparent', tension:.35, borderWidth:2, pointRadius:0 }
+    ]
+  },
+  options: {
+    responsive:true, maintainAspectRatio:false, animation:false,
+    interaction:{ mode:'index', intersect:false },
+    plugins:{ legend:{ labels:{ boxWidth:12, usePointStyle:true, pointStyle:'circle' } } },
+    scales:{
+      x:{ ticks:{ maxTicksLimit:6, color:'#6d80a5' }, grid:{ color:'#1b2743' } },
+      y:{ ticks:{ color:'#6d80a5' }, grid:{ color:'#1b2743' },
+          title:{ display:true, text:'m/s²', color:'#6d80a5' } }
+    }
+  }
+});
+
+/* =========================================================
+   4. STATE / UTILITIES
+   ========================================================= */
+const state = {
+  prevFall: null, prevTouch: null,
+  prevHrZone: null, prevSpo2Zone: null,
+  prevImpact: false,
+  packets: 0
+};
+
+const num  = (v) => { const f = parseFloat(v); return Number.isFinite(f) ? f : null; };
+const bool = (v) => {
+  if (typeof v === 'boolean') return v;
+  if (typeof v === 'number')  return v !== 0;
+  if (typeof v === 'string')  return ['true','1','yes','on'].includes(v.toLowerCase());
+  return false;
+};
+const clamp = (v,a,b) => Math.min(b, Math.max(a,v));
+const timeStr = (d=new Date()) =>
+  d.toLocaleTimeString('en-GB', { hour12:false });
+
+function setConn(level, text){
+  const dot = $('connDot');
+  dot.className = 'dot ' + (level === 'ok' ? 'good' : level);
+  $('connText').textContent = text;
+}
+
+/* ---- push a point into all rolling buffers ---- */
+function pushPoint(hr, spo2, ax, ay, az){
+  labels.push(timeStr());
+  hrData.push(hr);
+  spo2Data.push(spo2);
+  axData.push(ax);
+  ayData.push(ay);
+  azData.push(az);
+
+  while (labels.length > MAX_POINTS){
+    labels.shift(); hrData.shift(); spo2Data.shift();
+    axData.shift(); ayData.shift(); azData.shift();
+  }
+  vitalsChart.update('none');
+  accelChart.update('none');
+}
+
+/* ---- card setter ---- */
+function setCard(cardId, valId, tagId, value, status, level){
+  const card = $(cardId);
+  card.classList.remove('good','warn','bad');
+  if (level) card.classList.add(level);
+  $(valId).textContent = value;
+  $(tagId).textContent = status;
+}
+
+/* =========================================================
+   5. EVENT LOG
+   ========================================================= */
+const logs = [];
+function addLog(level, message){
+  logs.unshift({ level, message, time: timeStr() });
+  if (logs.length > 40) logs.pop();
+  renderLog();
+}
+function renderLog(){
+  const box = $('logBox');
+  if (!logs.length){
+    box.innerHTML = `<div class="log-item"><span class="t">--:--:--</span><span>No events yet.</span></div>`;
+    return;
+  }
+  box.innerHTML = logs.map(l =>
+    `<div class="log-item ${l.level}"><span class="t">${l.time}</span><span>${l.message}</span></div>`
+  ).join('');
+}
+$('clearLog').addEventListener('click', () => { logs.length = 0; renderLog(); });
+
+/* =========================================================
+   6. ANALYSIS ENGINE
+   ========================================================= */
+function analyze({ hr, spo2, mag, tilt, fall, touch }){
+  const insights = [];
+  let score = 100;
+
+  /* ---- Heart rate ---- */
+  let hrZone = 'unknown';
+  if (hr === null){
+    insights.push({ level:'warn', icon:'❔', title:'Heart Rate — no data',
+                    text:'No heart-rate value received in the latest packet.' });
+  } else if (hr < 50){
+    hrZone = 'critical';
+    score -= 28;
+    insights.push({ level:'bad', icon:'🔻', title:'Severe Bradycardia',
+                    text:`Heart rate is ${hr} bpm — well below the normal 60–100 bpm range. Seek attention.` });
+  } else if (hr < 60){
+    hrZone = 'low';
+    score -= 12;
+    insights.push({ level:'warn', icon:'🔽', title:'Bradycardia',
+                    text:`Heart rate is ${hr} bpm — slightly below the normal 60–100 bpm range.` });
+  } else if (hr > 120){
+    hrZone = 'critical';
+    score -= 28;
+    insights.push({ level:'bad', icon:'🔺', title:'Severe Tachycardia',
+                    text:`Heart rate is ${hr} bpm — far above the normal range. Immediate attention advised.` });
+  } else if (hr > 100){
+    hrZone = 'high';
+    score -= 12;
+    insights.push({ level:'warn', icon:'🔼', title:'Tachycardia',
+                    text:`Heart rate is ${hr} bpm — slightly above the normal 60–100 bpm range.` });
+  } else {
+    hrZone = 'normal';
+    insights.push({ level:'good', icon:'✅', title:'Heart Rate Normal',
+                    text:`${hr} bpm is within the healthy 60–100 bpm range.` });
+  }
+
+  /* ---- SpO2 ---- */
+  let spo2Zone = 'unknown';
+  if (spo2 === null){
+    insights.push({ level:'warn', icon:'❔', title:'SpO₂ — no data',
+                    text:'No blood-oxygen value received in the latest packet.' });
+  } else if (spo2 < 90){
+    spo2Zone = 'critical';
+    score -= 35;
+    insights.push({ level:'bad', icon:'🫁', title:'Critical Hypoxemia',
+                    text:`SpO₂ is ${spo2}% — below 90% is a medical emergency. Administer oxygen / call for help.` });
+  } else if (spo2 < 95){
+    spo2Zone = 'low';
+    score -= 15;
+    insights.push({ level:'warn', icon:'⚠️', title:'Low Oxygen Saturation',
+                    text:`SpO₂ is ${spo2}% — below the normal 95–100% range. Monitor closely.` });
+  } else {
+    spo2Zone = 'normal';
+    insights.push({ level:'good', icon:'✅', title:'Oxygen Saturation Normal',
+                    text:`SpO₂ is ${spo2}% — well within the healthy 95–100% range.` });
+  }
+
+  /* ---- Motion / accelerometer ---- */
+  if (mag !== null){
+    const dev = Math.abs(mag - 9.81);
+    if (mag > 25){
+      score -= 18;
+      insights.push({ level:'bad', icon:'💥', title:'High-Impact Motion Detected',
+                      text:`Acceleration magnitude reached ${mag.toFixed(2)} m/s² — a possible impact or fall event.` });
+    } else if (dev > 3){
+      insights.push({ level:'warn', icon:'🏃', title:'Active Movement',
+                      text:`Magnitude ${mag.toFixed(2)} m/s² deviates ${dev.toFixed(2)} m/s² from rest (1 g) — the wearer is moving.` });
+    } else {
+      insights.push({ level:'good', icon:'🧘', title:'Device at Rest',
+                      text:`Magnitude ${mag.toFixed(2)} m/s² is close to 1 g — the wearer appears stationary.` });
+    }
+  }
+
+  /* ---- Tilt ---- */
+  if (tilt !== null){
+    if (tilt > 60){
+      insights.push({ level:'warn', icon:'📐', title:'Large Body Tilt',
+                      text:`Device tilted ${tilt.toFixed(1)}° from vertical — possible lying-down / fallen posture.` });
+    } else {
+      insights.push({ level:'good', icon:'📐', title:'Posture Normal',
+                      text:`Tilt angle ${tilt.toFixed(1)}° from vertical — upright posture.` });
+    }
+  }
+
+  /* ---- Fall ---- */
+  if (fall){
+    score -= 45;
+    insights.push({ level:'bad', icon:'🚨', title:'Fall Alert Active',
+                    text:'The fall sensor has flagged a fall. Immediate verification of the wearer is required.' });
+  } else {
+    insights.push({ level:'good', icon:'✅', title:'No Fall Detected',
+                    text:'The fall-detection flag is currently clear.' });
+  }
+
+  /* ---- Touch / SOS ---- */
+  if (touch){
+    score -= 8;
+    insights.push({ level:'warn', icon:'🖐️', title:'Touch / SOS Triggered',
+                    text:'The manual touch trigger has been activated — the wearer may be requesting help.' });
+  }
+
+  score = clamp(Math.round(score), 0, 100);
+  return { insights, score, hrZone, spo2Zone };
+}
+
+function renderAnalysis({ insights, score }, summary){
+  /* score ring */
+  const ring = $('scoreRing');
+  const color = score >= 85 ? '#25d07a' : score >= 60 ? '#ffb020' : '#ff4d5e';
+  const deg = (score / 100) * 360;
+  ring.style.background = `conic-gradient(${color} ${deg}deg, #1c2743 ${deg}deg)`;
+  $('scoreVal').textContent = score;
+  $('scoreVal').style.color = color;
+  $('summaryText').innerHTML = summary;
+
+  $('insights').innerHTML = insights.map(i =>
+    `<li class="${i.level}">
+       <span class="ico">${i.icon}</span>
+       <div><strong>${i.title}</strong><span>${i.text}</span></div>
+     </li>`).join('');
+}
+
+/* =========================================================
+   7. MAIN DATA HANDLER
+   ========================================================= */
+function handlePayload(raw){
+  if (!raw || typeof raw !== 'object') return;
+
+  /* Support both  /  →  {sensor_data:{...}}  and  /sensor_data → {...} */
+  let d = raw;
+  if (d.sensor_data && typeof d.sensor_data === 'object') d = d.sensor_data;
+  if (d.sensor_data && typeof d.sensor_data === 'object') d = d.sensor_data; // extra nesting
+
+  const hr    = num(d.heartRate ?? d.heart_rate ?? d.hr);
+  const spo2  = num(d.spO2 ?? d.spo2 ?? d.SpO2 ?? d.oxygen);
+  const ax    = num(d.accel_x ?? d.accelX ?? 0) ?? 0;
+  const ay    = num(d.accel_y ?? d.accelY ?? 0) ?? 0;
+  const az    = num(d.accel_z ?? d.accelZ ?? 0) ?? 0;
+  const fall  = bool(d.fallAlert ?? d.fall_alert ?? d.fall);
+  const touch = bool(d.touchTrigger ?? d.touch_trigger ?? d.touch);
+
+  /* --- derived physics --- */
+  const mag  = Math.sqrt(ax*ax + ay*ay + az*az);
+  const tilt = mag > 0 ? (Math.acos(clamp(az / mag, -1, 1)) * 180 / Math.PI) : 0;
+
+  state.packets++;
+
+  /* --- cards --- */
+  // Heart rate
+  let hrLevel = '', hrText = '';
+  if (hr === null){ hrLevel=''; hrText='no data'; }
+  else if (hr < 60){ hrLevel='warn'; hrText='Bradycardia'; }
+  else if (hr > 100){ hrLevel='bad'; hrText='Tachycardia'; }
+  else { hrLevel='good'; hrText='Normal'; }
+  setCard('cardHr','hrVal','hrTag', hr === null ? '--' : Math.round(hr), hrText, hrLevel);
+
+  // SpO2
+  let spLevel = '', spText = '';
+  if (spo2 === null){ spLevel=''; spText='no data'; }
+  else if (spo2 < 90){ spLevel='bad'; spText='Critical'; }
+  else if (spo2 < 95){ spLevel='warn'; spText='Low'; }
+  else { spLevel='good'; spText='Normal'; }
+  setCard('cardSpo2','spo2Val','spo2Tag', spo2 === null ? '--' : Math.round(spo2), spText, spLevel);
+
+  // Magnitude
+  const magDev = Math.abs(mag - 9.81);
+  let magLevel, magText;
+  if (mag > 25){ magLevel='bad';  magText='Impact!'; }
+  else if (magDev > 3){ magLevel='warn'; magText='Moving'; }
+  else { magLevel='good'; magText='At rest'; }
+  setCard('cardMag','magVal','magTag', mag.toFixed(2), magText, magLevel);
+
+  // Tilt
+  const tiltLevel = tilt > 60 ? 'warn' : 'good';
+  setCard('cardTilt','tiltVal','tiltTag', tilt.toFixed(1),
+          tilt > 60 ? 'Tilted' : 'Upright', tiltLevel);
+
+  // Fall
+  $('fallVal').textContent = fall ? 'FALL' : 'SAFE';
+  $('fallVal').style.color = fall ? 'var(--bad)' : 'var(--good)';
+  setCard('cardFall','fallVal','fallTag', fall ? 'FALL' : 'SAFE',
+          fall ? 'Alert active' : 'No fall', fall ? 'bad' : 'good');
+
+  // Touch
+  setCard('cardTouch','touchVal','touchTag',
+          touch ? 'PRESSED' : 'IDLE',
+          touch ? 'SOS triggered' : 'Not triggered',
+          touch ? 'warn' : 'good');
+
+  /* --- charts --- */
+  pushPoint(hr ?? null, spo2 ?? null, ax, ay, az);
+
+  /* --- analysis --- */
+  const result = analyze({ hr, spo2, mag, tilt, fall, touch });
+
+  const summaryBits = [];
+  summaryBits.push(`<b>${state.packets}</b> packets received.`);
+  if (hr !== null)   summaryBits.push(`Latest HR <b>${Math.round(hr)} bpm</b>.`);
+  if (spo2 !== null) summaryBits.push(`Latest SpO₂ <b>${Math.round(spo2)}%</b>.`);
+  summaryBits.push(fall ? '<b style="color:#ff7b8a">Fall alert is ACTIVE.</b>'
+                        : 'No fall detected.');
+  renderAnalysis(result, summaryBits.join(' '));
+
+  /* --- banner --- */
+  const banner = $('banner');
+  if (fall){
+    banner.classList.remove('hidden');
+    $('bannerIcon').textContent = '🚨';
+    $('bannerText').textContent = 'FALL DETECTED — immediate assistance may be required!';
+  } else if (spo2 !== null && spo2 < 90){
+    banner.classList.remove('hidden');
+    $('bannerIcon').textContent = '🫁';
+    $('bannerText').textContent = `CRITICAL SpO₂ (${Math.round(spo2)}%) — check the wearer immediately!`;
+  } else if (hr !== null && (hr < 45 || hr > 130)){
+    banner.classList.remove('hidden');
+    $('bannerIcon').textContent = '💓';
+    $('bannerText').textContent = `ABNORMAL HEART RATE (${Math.round(hr)} bpm) — please verify.`;
+  } else if (touch){
+    banner.classList.remove('hidden');
+    $('bannerIcon').textContent = '🖐️';
+    $('bannerText').textContent = 'TOUCH / SOS TRIGGER ACTIVATED by the wearer.';
+  } else {
+    banner.classList.add('hidden');
+  }
+
+  /* --- state-change event logging --- */
+  if (state.prevFall === null){
+    state.prevFall = fall; state.prevTouch = touch;
+    state.prevHrZone = result.hrZone; state.prevSpo2Zone = result.spo2Zone;
+    addLog('good', `Monitoring started — first packet received (HR ${hr ?? '--'}, SpO₂ ${spo2 ?? '--'}).`);
+  } else {
+    if (state.prevFall !== fall){
+      addLog(fall ? 'bad' : 'good', fall ? '🚨 Fall alert ACTIVATED.' : '✅ Fall alert cleared.');
+      state.prevFall = fall;
+    }
+    if (state.prevTouch !== touch){
+      addLog(touch ? 'warn' : 'good', touch ? '🖐️ Touch / SOS trigger pressed.' : 'Touch trigger released.');
+      state.prevTouch = touch;
+    }
+    if (state.prevHrZone !== result.hrZone){
+      const lvl = result.hrZone === 'normal' ? 'good' : (result.hrZone === 'critical' ? 'bad' : 'warn');
+      addLog(lvl, `Heart rate zone changed → ${result.hrZone.toUpperCase()} (${Math.round(hr)} bpm).`);
+      state.prevHrZone = result.hrZone;
+    }
+    if (state.prevSpo2Zone !== result.spo2Zone){
+      const lvl = result.spo2Zone === 'normal' ? 'good' : (result.spo2Zone === 'critical' ? 'bad' : 'warn');
+      addLog(lvl, `SpO₂ zone changed → ${result.spo2Zone.toUpperCase()} (${Math.round(spo2)}%).`);
+      state.prevSpo2Zone = result.spo2Zone;
+    }
+  }
+
+  /* --- impact spike (independent of the fall flag) --- */
+  const impact = mag > 25;
+  if (impact && !state.prevImpact){
+    addLog('bad', `💥 Impact spike detected — ${mag.toFixed(2)} m/s².`);
+  }
+  state.prevImpact = impact;
+
+  /* --- timestamp --- */
+  const ts = d.timestamp ? new Date(d.timestamp) : new Date();
+  $('lastUpdate').textContent = 'Updated ' + (isNaN(ts) ? timeStr() : timeStr(ts));
+}
+
+/* =========================================================
+   8. AUTH + REALTIME LISTENER
+   ========================================================= */
+setConn('warn', 'Authenticating…');
+
+signInWithEmailAndPassword(auth, AUTH_EMAIL, AUTH_PASS)
+  .then(() => { setConn('warn', 'Authenticated · connecting to database…'); })
+  .catch((err) => {
+    console.warn('Auth failed:', err.code, err.message);
+    setConn('warn', 'Auth failed (' + (err.code || 'error') + ') — trying public read…');
+  })
+  .finally(() => {
+
+    onValue(
+      ref(db, '/'),
+      (snapshot) => {
+        const val = snapshot.val();
+        if (val === null){
+          setConn('warn', 'Connected — no data at root yet');
+          return;
+        }
+        setConn('ok', 'Live · receiving data');
+        handlePayload(val);
+      },
+      (error) => {
+        console.error(error);
+        setConn('bad', 'DB error: ' + error.code);
+        addLog('bad', 'Database read failed: ' + error.message);
+      }
+    );
+
+  });
+</script>
+</body>
+</html>
